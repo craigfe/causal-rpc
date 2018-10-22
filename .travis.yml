@@ -1,3 +1,12 @@
 language: c
-install: wget https://raw.githubusercontent.com/ocaml/ocaml-ci-scripts/master/.travis-opam.sh
-script: bash -ex .travis-opam.sh
+install: wget https://raw.githubusercontent.com/ocaml/ocaml-ci-scripts/master/.travis-ocaml.sh
+script:
+  - bash -ex .travis-ocaml.sh
+  - eval $(opam config env)
+  - opam install --yes dune cmdliner fmt irmin irmin-unix logs alcotest
+  - make test
+env:
+  - OCAML_VERSION=4.05
+addons:
+  apt:
+    update: true
