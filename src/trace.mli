@@ -1,1 +1,2 @@
-val main: unit -> int
+
+module Cli = Cli

@@ -1,11 +1,11 @@
-(executable
- (name trace)
- (libraries
-	cmdliner
-	fmt.cli
-	fmt.tty
-	irmin
-	irmin-unix
-	logs.cli
-	logs.fmt
- ))
+(library
+	(name trace)
+	(public_name trace)
+	(libraries
+		cmdliner
+		fmt.cli
+		fmt.tty
+		irmin
+		irmin-unix
+		logs.cli
+		logs.fmt))
