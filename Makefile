@@ -12,3 +12,4 @@ hooks:
 
 clean:
 	dune clean
+	git clean -dfX
