@@ -1,0 +1,3 @@
+(executable
+ (name trace)
+ (libraries cmdliner irmin irmin-unix))
