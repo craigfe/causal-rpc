@@ -20,10 +20,10 @@ let generate_random_name ?(length=8) () =
         |> (String.make 1) in
 
     Array.init length rand_string
-        |> Array.to_list
-        |> List.cons "server--"
-        |> String.concat ""
-        |> fun x -> print_endline ("No server name supplied. Generated random name " ^ x ^ "."); x
+		|> Array.to_list
+		|> List.cons "server--"
+		|> String.concat ""
+		|> fun x -> Logs.info (fun m -> m "No server name supplied. Generated random name %s" x); x
 
 let run ?(name=generate_random_name ()) port =
 
