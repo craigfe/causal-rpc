@@ -1,6 +1,6 @@
 (library
-	(name trace)
-	(public_name trace)
+	(name trace_rpc)
+	(public_name trace_rpc)
 	(libraries
 		cmdliner
 		fmt.cli

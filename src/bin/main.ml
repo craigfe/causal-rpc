@@ -1,4 +1,4 @@
-open Trace
+open Trace_rpc
 
 let () =
   Cli.run ()

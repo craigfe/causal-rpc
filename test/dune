@@ -2,4 +2,4 @@
 	(name test)
 	(libraries
 		alcotest
-		trace))
+		trace_rpc))
