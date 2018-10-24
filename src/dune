@@ -8,4 +8,6 @@
 		irmin
 		irmin-unix
 		logs.cli
-		logs.fmt))
+		logs.fmt
+		lwt
+		ocamlgraph))
