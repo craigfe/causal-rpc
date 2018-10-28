@@ -66,6 +66,22 @@ module Make(M: MONAD) : sig
 
   module T : RPCTRANSFORMER
 
+  (* The monad to use for implementation and combination of RPC functions *)
+  module ErrM : sig
+    val ret : 'a -> ('a, 'b) T.resultb
+    val ret_err : 'b -> ('a, 'b) T.resultb
+    val checked_bind :
+         ('a, 'b) T.resultb
+      -> ('a -> ('c, 'd) T.resultb)
+      -> ('b -> ('c, 'd) T.resultb)
+      -> ('c, 'd) T.resultb
+
+    val bind :
+      ('a, 'b) T.resultb -> ('a -> ('c, 'b) T.resultb) -> ('c, 'b) T.resultb
+    val ( >>= ) :
+      ('a, 'b) T.resultb -> ('a -> ('c, 'b) T.resultb) -> ('c, 'b) T.resultb
+  end
+
   module Client () : sig
     include RPC
       with type implementation = client_implementation

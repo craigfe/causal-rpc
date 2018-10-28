@@ -65,6 +65,17 @@ module Make (M : MONAD) = struct
     let ( ~@ ) = put
   end
 
+  module ErrM  = struct
+    let ret x = T.put (M.ret (Result.Ok x))
+    let ret_err e = T.put (M.ret (Result.Error e))
+    let checked_bind x f f1 =
+      T.bind x
+        T.(function Result.Ok x -> !@(f x) | Result.Error x -> !@(f1 x))
+
+    let bind x f = checked_bind x f ret_err
+    let ( >>= ) x f = bind x f
+  end
+
   type client_implementation = unit
   type server_implementation = (string, T.rpc_func option) Hashtbl.t
 
