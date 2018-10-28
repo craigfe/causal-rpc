@@ -37,13 +37,13 @@ let timestamp () =
     (tm.Unix.tm_sec)
     (int_of_float (1_000. *. us))
 
-(* let print_commit c =
- *   print_endline (Irmin.Info.message (Store.Commit.info c)) *)
+let print_commit c =
+  print_endline (Irmin.Info.message (Store.Commit.info c))
 
 let print_commit_type commit_diff = match commit_diff with
-  | `Updated (_, _) -> print_endline "updated"
-  | `Removed _ -> print_endline "removed"
-  | `Added _ -> print_endline "added"
+  | `Updated (a, b) -> print_endline " --- updated --- "; print_commit a; print_commit b
+  | `Removed c -> print_endline " --- removed --- "; print_commit c
+  | `Added c -> print_endline " --- added --- "; print_commit c
 
 let callback commit =
   Logs.warn (fun m -> m "Callback invoked");
@@ -73,11 +73,12 @@ let run ?(name=generate_random_name ()) port =
 
   (* Commit a few things to the repository *)
   >>= fun w -> commit t name 1
-  >>= fun () -> commit t name 2
-  >>= fun () -> commit t name 3
-  >>= fun () -> commit t name 4
-  >>= fun () -> commit t name 5
-  >>= fun () -> Unix.sleep 100; Store.unwatch w
+  (* >>= fun () -> commit t name 2
+   * >>= fun () -> commit t name 3
+   * >>= fun () -> commit t name 4
+   * >>= fun () -> commit t name 5 *)
+
+  >>= fun () -> Unix.sleep 10000; Store.unwatch w
 
 let main name port =
   Lwt_main.run (run ?name port)
