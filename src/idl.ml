@@ -117,3 +117,14 @@ module Make (M : MONAD) = struct
   end
 end
 
+module IdM = struct
+  type 'a t = T of 'a
+
+  let lift f x = T (f x)
+  let bind (T x) f = f x
+  let ret x = T x
+
+  let ( >>= ) = bind
+
+  let run (T x) = x
+end

@@ -96,3 +96,11 @@ module Make(M: MONAD) : sig
        and type ('a, 'b) comp = ('a, 'b) T.resultb
   end
 end
+
+module IdM : sig
+  include MONAD
+
+  val lift : ('a -> 'b) -> 'a -> 'b t
+  val ( >>= ) : 'a t -> ('a -> 'b t) -> 'b t
+  val run : 'a t -> 'a
+end
