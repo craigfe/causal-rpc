@@ -23,6 +23,7 @@ module type RPC = sig
   type ('a, 'b) comp
   type _ fn
 
+  val ( --> ) : 'a Param.t -> 'b fn -> ('a -> 'b) fn
   val implement : Interface.description -> implementation
   val returning : 'a Param.t -> ('a, 'b) comp fn
   val declare : string -> string list -> 'a fn -> 'a res
@@ -73,7 +74,7 @@ module Make (M : MONAD) = struct
     type ('a, 'b) comp = ('a, 'b) T.resultb
 
     type _ fn =
-      (* | Function: 'a Param.t * 'b fn -> ('a -> 'b) fn *)
+      | Function: 'a Param.t * 'b fn -> ('a -> 'b) fn
       | Returning: 'a Param.t -> ('a, 'b) comp fn
 
     let description = ref None
@@ -81,7 +82,7 @@ module Make (M : MONAD) = struct
     let implement x = description := Some x; ()
     let returning a = Returning a
 
-    (* let ( @-> ) t f = Function (t, f) *)
+    let ( --> ) t f = Function (t, f)
     let declare _ _ _ (_: T.rpc_func) = invalid_arg "TODO"
   end
 
@@ -91,7 +92,7 @@ module Make (M : MONAD) = struct
     type 'a res = 'a -> unit
 
     type _ fn =
-      (* | Function: 'a Param.t * 'b fn -> ('a -> 'b) fn *)
+      | Function: 'a Param.t * 'b fn -> ('a -> 'b) fn
       | Returning: 'a Param.t -> ('a, 'b) comp fn
 
     let funcs = Hashtbl.create 20
@@ -100,7 +101,7 @@ module Make (M : MONAD) = struct
     let implement x : implementation = description := Some x; funcs
     let returning a  = Returning a
 
-    (* let ( @-> ) t f = Function (t, f) *)
+    let ( --> ) t f = Function (t, f)
     let declare _ _ _ _ = invalid_arg "TODO"
   end
 end

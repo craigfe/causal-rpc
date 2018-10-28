@@ -24,13 +24,13 @@ end
 (* Specialisation modules must conform to this type *)
 module type RPC = sig
   type implementation
-
   type 'a res
   type ('a, 'b) comp
 
   (* GADT for RPC type*)
   type _ fn
 
+  val ( --> ) : 'a Param.t -> 'b fn -> ('a -> 'b) fn
   val implement : Interface.description -> implementation
   val returning : 'a Param.t -> ('a, 'b) comp fn
   val declare: string -> string list -> 'a fn -> 'a res
