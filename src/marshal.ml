@@ -1,18 +1,24 @@
+module Id = struct
+  type t = int64
+  let id_of_int x = Int64.of_int x
+  let id_of_int64 x = x
+end
+
 module Param = struct
-  type t = string Irmin.Type.t
+  type 'a t = 'a Irmin.Type.t
   let mk name = name
 end
 
 type rpc = {
-  id: string;
+  id: Id.t;
   params: string list;
   result: string option;
 }
 
 let rpc_t =
-    let open Irmin.Type in
+  let open Irmin.Type in
     record "rpc" (fun id params result -> { id; params; result })
-    |+ field "id"  string (fun t -> t.id)
+    |+ field "id" int64 (fun t -> t.id)
     |+ field "params" (list (Param.mk string)) (fun t -> t.params)
     |+ field "result" (option (Param.mk string)) (fun t -> t.result)
     |> sealr

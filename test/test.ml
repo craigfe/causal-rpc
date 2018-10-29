@@ -1,8 +1,9 @@
 open Trace_rpc
 
 let test_marshal () =
-  Marshal.Rpc.make "123" ["Some"; "example"; "params"] None
-  |> Fmt.strf "%a\n" Marshal.Rpc.pp
+  let open Marshal in
+  Rpc.make (Id.id_of_int 123) ["Some"; "example"; "params"] None
+  |> Fmt.strf "%a\n" Rpc.pp
   |> Alcotest.(check string) "Simple serialisation" "A"
 
 let print m = Fmt.pr "%a\n%!"  m
