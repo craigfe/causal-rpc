@@ -2,7 +2,7 @@
 module Interface : sig
   type description = {
     name: string;
-    description: string list;
+    description: string;
     version: Rpc.Version.t;
   }
 end
@@ -33,7 +33,7 @@ module type RPC = sig
   val ( --> ) : 'a Param.t -> 'b fn -> ('a -> 'b) fn
   val implement : Interface.description -> implementation
   val returning : 'a Param.t -> ('a, 'b) comp fn
-  val declare: string -> string list -> 'a fn -> 'a res
+  val declare: name:string -> description:string -> 'a fn -> 'a res
 end
 
 (* Simple monad definition *)
@@ -43,6 +43,9 @@ module type MONAD = sig
   val bind : 'a t -> ('a -> 'b t) -> 'b t
   val ret : 'a -> 'a t
 end
+
+val get_argument : Rpc.call -> string ->
+  (Rpc.t * Rpc.call, [> `Msg of string]) result
 
 (* Module for generating clients and servers *)
 module Make(M: MONAD) : sig

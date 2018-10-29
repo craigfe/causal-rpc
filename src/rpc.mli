@@ -4,6 +4,14 @@ module Version : sig
   val compare : t -> t -> int
 end
 
+type param =
+  | String of string Irmin.Type.t
+  | Int of int64 Irmin.Type.t
+
+type named_param = string * param
+
+type call = {name: string; params: named_param list}
 type response = {contents: string}
-type call = {name: string; params: string list}
-val call : string -> string list -> call
+
+val call : string -> named_param list -> call
+val success: string -> response

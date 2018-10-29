@@ -1,7 +1,7 @@
 module Interface = struct
   type description = {
     name: string;
-    description: string list;
+    description: string;
     version: Rpc.Version.t
   }
 end
@@ -26,7 +26,7 @@ module type RPC = sig
   val ( --> ) : 'a Param.t -> 'b fn -> ('a -> 'b) fn
   val implement : Interface.description -> implementation
   val returning : 'a Param.t -> ('a, 'b) comp fn
-  val declare : string -> string list -> 'a fn -> 'a res
+  val declare : name:string -> description:string -> 'a fn -> 'a res
 end
 
 module type MONAD = sig
@@ -36,11 +36,19 @@ module type MONAD = sig
   val ret : 'a -> 'a t
 end
 
+let get_argument call name =
+  let ps = call.Rpc.params in
+    match List.partition (fun (x, _) -> x = name) ps with
+    | (_, arg) :: dups, others ->
+        Result.Ok (arg, {call with Rpc.params=(dups @ others)})
+    | _, _ ->
+        Result.Error (`Msg (Printf.sprintf "Expecting named argument '%s'" name))
+
 module Make (M : MONAD) = struct
   module type RPCTRANSFORMER = sig
     type 'a box
     type ('a, 'b) resultb = ('a, 'b) Result.result box
-    type rpc_func = Rpc.call -> Rpc.response M.t
+    type rpc_func = Rpc.call -> Rpc.response
 
     val lift : ('a -> 'b M.t) -> 'a -> 'b box
     val bind : 'a box -> ('a -> 'b M.t) -> 'b box
@@ -54,10 +62,10 @@ module Make (M : MONAD) = struct
   module T = struct
     type 'a box = {box: 'a M.t}
     type ('a, 'b) resultb = ('a, 'b) Result.result box
-    type rpc_func = Rpc.call -> Rpc.response M.t
+    type rpc_func = Rpc.call -> Rpc.response
 
-    let lift f x = {box= f x}
-    let bind {box = x} f = {box= M.bind x f}
+    let lift f x = {box = f x}
+    let bind {box = x} f = {box = M.bind x f}
     let ret x = {box = M.ret x}
     let get {box = x} = x
     let ( !@ ) = get
@@ -94,7 +102,7 @@ module Make (M : MONAD) = struct
     let returning a = Returning a
 
     let ( --> ) t f = Function (t, f)
-    let declare _ _ _ (_: T.rpc_func) = invalid_arg "TODO"
+    let declare ~name:_ ~description:_ _ (_: T.rpc_func) = invalid_arg "TODO"
   end
 
   module Server () = struct
@@ -105,15 +113,54 @@ module Make (M : MONAD) = struct
     type _ fn =
       | Function: 'a Param.t * 'b fn -> ('a -> 'b) fn
       | Returning: 'a Param.t -> ('a, 'b) comp fn
+    [@@deriving sexp]
 
-    let funcs = Hashtbl.create 20
+    let funcs = Hashtbl.create 5
     let description = ref None
 
     let implement x : implementation = description := Some x; funcs
     let returning a  = Returning a
 
     let ( --> ) t f = Function (t, f)
-    let declare _ _ _ _ = invalid_arg "TODO"
+
+    exception NoDescription
+    exception MarshalError of string
+
+    let declare : name:string -> description:string -> 'a fn -> 'a res =
+
+      fun ~name ~description:_ ty ->
+
+      (* We do not know the wire name yet as the description may still be unset *)
+      Hashtbl.add funcs name None;
+
+      fun impl ->
+        if !description = None then raise NoDescription;
+        let rpcfn =
+          let rec inner : type a. a fn -> a -> Rpc.call -> Rpc.response = fun f impl call ->
+            try
+              match f with
+              | Function (t, f) ->
+                let (arg_rpc, call') =
+                  match get_argument call t.Param.name with
+                  | Result.Ok arg -> arg
+                  | Result.Error (`Msg m) -> raise (MarshalError m)
+                in
+                (* let z = Rpcmarshal.unmarshal t.Param.typedef.Rpc.Types.ty arg_rpc in *)
+                let z = Result.Ok arg_rpc in
+                let arg =
+                  match z with
+                  | Result.Ok arg -> arg
+                  | Result.Error (`Msg m) -> raise (MarshalError m)
+                in
+                inner f (impl arg) call'
+              | Returning _ (*t*) -> Rpc.success "marshalled param"
+            with e -> raise e
+          in inner ty impl
+        in
+
+      (* The wire name might be different from the name *)
+      Hashtbl.remove funcs name;
+      Hashtbl.add funcs name (Some rpcfn)
   end
 end
 
@@ -123,8 +170,6 @@ module IdM = struct
   let lift f x = T (f x)
   let bind (T x) f = f x
   let ret x = T x
-
   let ( >>= ) = bind
-
   let run (T x) = x
 end
