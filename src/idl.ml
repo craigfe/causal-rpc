@@ -1,7 +1,7 @@
 module Interface = struct
   type description = {
     name: string;
-    description: string list;
+    description: string;
     version: Rpc.Version.t
   }
 end
