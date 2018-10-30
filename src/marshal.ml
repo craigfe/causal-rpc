@@ -5,22 +5,23 @@ module Id = struct
 end
 
 module Param = struct
-  type 'a t = 'a Irmin.Type.t
-  let mk name = name
+  type 'a t = 'a
+  let t = Irmin.Type.string
+
 end
 
 type rpc = {
   id: Id.t;
-  params: string list;
-  result: string option;
+  params: string Param.t list;
+  result: string Param.t option;
 }
 
 let rpc_t =
   let open Irmin.Type in
     record "rpc" (fun id params result -> { id; params; result })
     |+ field "id" int64 (fun t -> t.id)
-    |+ field "params" (list (Param.mk string)) (fun t -> t.params)
-    |+ field "result" (option (Param.mk string)) (fun t -> t.result)
+    |+ field "params" (list Param.t) (fun t -> t.params)
+    |+ field "result" (option Param.t) (fun t -> t.result)
     |> sealr
 
 module Rpc = struct
