@@ -6,23 +6,11 @@ module Sync = Irmin.Sync(Store)
 (* Commit information *)
 let info author fmt = Irmin_unix.info ~author:author fmt
 
-let generate_random_name ?(length=8) () =
-	Random.self_init (); (* Initialise the random number generator *)
-
-  let rand_char_code () = match Random.int(26+26+10) with
-      n when n < 26      -> int_of_char 'a' + n
-    | n when n < 26 + 26 -> int_of_char 'A' + n - 26
-    | n                  -> int_of_char '0' + n - 26 - 26 in
-
-  let rand_string _ = rand_char_code ()
-                      |> char_of_int
-                      |> (String.make 1) in
-
-  Array.init length rand_string
-	|> Array.to_list
-	|> List.cons "server--"
-	|> String.concat ""
+let random_server_name () =
+  Misc.generate_rand_string ()
+  |> Pervasives.(^) "server--"
 	|> fun x -> Logs.info (fun m -> m "No server name supplied. Generated random name %s" x); x
+
 
 let timestamp () =
   let ts = Unix.gettimeofday() in
@@ -56,7 +44,7 @@ let commit t name n =
   Logs.info (fun m -> m "Performing commit #%d" n);
   Store.set t ~info:(info name "cmt %d" n) [string_of_int n] (Printf.sprintf "%s: %n" (timestamp()) n)
 
-let run ?(name=generate_random_name ()) port =
+let run ?(name=random_server_name ()) port =
   Logs.info (fun m -> m "Started with name %s and port %d at time %s" name port (timestamp ()));
 
   let poll_rate = 1.0 in
