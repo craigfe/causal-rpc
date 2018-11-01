@@ -32,7 +32,7 @@ module Store = Irmin_unix.Git.FS.KV(Irmin.Contents.String)
 
 module Make(Eq : EqualityType) (Op: Operations with type t = Eq.t) = struct
   type elt = Eq.t
-  type t = Store.t
+  type t = Store.repo
   (* A set is a directory in an Irmin Key-value store *)
 
   let last_key = ref 0
@@ -52,22 +52,24 @@ module Make(Eq : EqualityType) (Op: Operations with type t = Eq.t) = struct
     let ret_code = Sys.command ("rm -rf " ^ directory) in begin
       if (ret_code <> 0) then invalid_arg "Unable to delete directory";
 
-      Lwt_main.run (Store.Repo.v config
-                    >>= Store.master)
+      Lwt_main.run (Store.Repo.v config)
     end
 
   let mem element s =
     let str_val = Eq.to_string element in
     let lwt =
-      Store.tree s
+      Store.master s
+      >>= fun m -> Store.tree m
       >>= fun tree -> Store.Tree.list tree ["vals"]
-      >>= Lwt_list.map_p (fun (x, _) -> Store.get s ["vals"; x])
+      >>= Lwt_list.map_p (fun (x, _) -> Store.get m ["vals"; x])
       >|= List.exists (fun x -> x = str_val)
     in Lwt_main.run lwt
 
   let add element s =
     let str_val = Eq.to_string element in
-    let lwt = Store.set s
+    let lwt =
+      Store.master s
+      >>= fun master -> Store.set master
         ~info:(Irmin_unix.info ~author:"test" "Committing %s" str_val)
         ["vals"; generate_new_key ()]
         str_val
@@ -77,7 +79,8 @@ module Make(Eq : EqualityType) (Op: Operations with type t = Eq.t) = struct
 
   let size s =
     let lwt =
-      Store.tree s
+      Store.master s
+      >>= Store.tree
       >>= fun tree -> Store.Tree.list tree ["vals"]
       >|= List.filter (fun (_, typ) -> typ = `Contents)
       >|= List.length
@@ -88,10 +91,11 @@ module Make(Eq : EqualityType) (Op: Operations with type t = Eq.t) = struct
 
   let elements s =
     let lwt =
-      Store.tree s
+      Store.master s
+      >>= fun master -> Store.tree master
       >>= fun tree -> Store.Tree.list tree ["vals"]
       >>= Lwt_list.map_p (fun (x, _) ->
-          Store.get s ["vals"; x])
+          Store.get master ["vals"; x])
       >|= List.map Eq.of_string
     in Lwt_main.run lwt
 end
