@@ -3,8 +3,17 @@ module type EqualityType = sig
   val (=) : t -> t -> bool
   val of_string: string -> t
   val to_string: t -> string
+
 end
 (** Input signature of the functor {!Set.Make}. *)
+
+module type Operations = sig
+  type t
+
+  (** HACK: Just change the value in some way; used for testing the map
+      operator on sets while we don't have a functor implementation *)
+  val iter: t -> t
+end
 
 module type S = sig
   type elt
@@ -35,8 +44,11 @@ module type S = sig
 
   val elements: t -> elt list
   (** Return the list of all elements of the given set. *)
+
+  val map: t -> t
+  (** Apply a function to all of the elements of the set *)
 end
 
-module Make (Eq : EqualityType) : S with type elt = Eq.t
+module Make (Eq : EqualityType) (Op: Operations with type t = Eq.t) : S with type elt = Eq.t
 (** Functor building an implementation of the set structure
-    given an equality type. *)
+    given an equality type and a set of operations on that type. *)

@@ -5,4 +5,9 @@ module Int = struct
   let to_string = string_of_int
 end
 
-module IntSet = Set.Make(Int)
+module Ops = struct
+  type t = int
+  let iter x = x + 1
+end
+
+module IntSet = Set.Make(Int)(Ops)

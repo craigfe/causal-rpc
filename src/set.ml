@@ -7,6 +7,11 @@ module type EqualityType = sig
   val to_string: t -> string
 end
 
+module type Operations = sig
+  type t
+  val iter: t -> t
+end
+
 module type S = sig
   type elt
   type t
@@ -18,11 +23,14 @@ module type S = sig
   val remove: elt -> t -> t
   val size: t -> int
   val elements: t -> elt list
+
+  (* TODO: generalise this to one of a set of functions *)
+  val map: t -> t
 end
 
 module Store = Irmin_unix.Git.FS.KV(Irmin.Contents.String)
 
-module Make(Eq : EqualityType) = struct
+module Make(Eq : EqualityType) (Op: Operations with type t = Eq.t) = struct
   type elt = Eq.t
   type t = Store.t
   (* A set is a directory in an Irmin Key-value store *)
