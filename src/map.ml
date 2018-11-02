@@ -103,16 +103,29 @@ module Make(Eq : EqualityType) (Op: Operations with type t = Eq.t) = struct
 
   let map s =
     let lwt =
-      Store.of_branch s "map--alpha"
-      >>= fun branched_store -> Store.set branched_store
-        ~info:(Irmin_unix.info ~author:"map" "%s" "Issuing map")
-        ["map_request"]
-        "map_contents"
+
+      (* TODO: ensure this name doesn't collide with existing branches *)
+      let map_name = "map--" ^ Misc.generate_rand_string ~length:8 () in
+      Logs.debug (fun m -> m "Map operation issued. Branch name %s" map_name);
+
+      Store.master s
+
+      (* Push a map_request onto the master branch *)
+      >>= fun m -> Store.set m
+        ~info:(Irmin_unix.info ~author:"map" "Issuing map") ["map_request"] map_name
+
+      (* Create a new branch to isolate the operation *)
+      >>= fun _ -> Store.of_branch s map_name
+      >>= fun branch -> Store.set ~info:(Irmin_unix.info ~author:"map" "specifying workload") branch ["todo"] "true"
+
+      (* Wait for todo to be set to false *)
+      >|= (fun _ -> while Lwt_main.run(Store.get branch ["todo"]) = "true" do Unix.sleep 1 done)
+
+      (* TODO: Merge the map branch into master *)
+      >|= fun () -> ()
 
     in Lwt_main.run lwt; s
 
-  (* Push a map_request onto the master branch *)
-  (* Create a new branch *)
   (* Wait for the request to become empty *)
   (* Return the result *)
 
