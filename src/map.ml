@@ -13,32 +13,29 @@ module type Operations = sig
 end
 
 module type S = sig
-  type elt
+  type key = string
+  type value
   type t
 
   val empty: ?directory:string -> unit -> t
   val is_empty: t -> bool
-  val mem: elt -> t -> bool
-  val add: elt -> t -> t
-  val remove: elt -> t -> t
+  val mem: key -> t -> bool
+  val add: key -> value -> t -> t
+  val remove: key -> t -> t
   val size: t -> int
-  val elements: t -> elt list
-
-  (* TODO: generalise this to one of a set of functions *)
+  val keys: t -> key list
+  val values: t -> value list
   val map: t -> t
 end
 
 module Store = Irmin_unix.Git.FS.KV(Irmin.Contents.String)
 
 module Make(Eq : EqualityType) (Op: Operations with type t = Eq.t) = struct
-  type elt = Eq.t
-  type t = Store.repo
-  (* A set is a directory in an Irmin Key-value store *)
+  type key = string
+  type value = Eq.t
 
-  let last_key = ref 0
-  let generate_new_key () =
-    last_key := !last_key + 1;
-    string_of_int !last_key
+  type t = Store.repo
+  (* A map is a directory in an Irmin Key-value store *)
 
   let generate_random_directory () =
     Misc.generate_rand_string ~length:20 ()
@@ -55,23 +52,21 @@ module Make(Eq : EqualityType) (Op: Operations with type t = Eq.t) = struct
       Lwt_main.run (Store.Repo.v config)
     end
 
-  let mem element s =
-    let str_val = Eq.to_string element in
+  let mem key m =
     let lwt =
-      Store.master s
+      Store.master m
       >>= fun m -> Store.tree m
       >>= fun tree -> Store.Tree.list tree ["vals"]
-      >>= Lwt_list.map_p (fun (x, _) -> Store.get m ["vals"; x])
-      >|= List.exists (fun x -> x = str_val)
+      >|= List.exists (fun (x,_) -> x = key)
     in Lwt_main.run lwt
 
-  let add element s =
-    let str_val = Eq.to_string element in
+  let add key value s =
+    let str_val = Eq.to_string value in
     let lwt =
       Store.master s
       >>= fun master -> Store.set master
         ~info:(Irmin_unix.info ~author:"test" "Committing %s" str_val)
-        ["vals"; generate_new_key ()]
+        ["vals"; key]
         str_val
     in Lwt_main.run lwt; s
 
@@ -82,20 +77,47 @@ module Make(Eq : EqualityType) (Op: Operations with type t = Eq.t) = struct
       Store.master s
       >>= Store.tree
       >>= fun tree -> Store.Tree.list tree ["vals"]
-      >|= List.filter (fun (_, typ) -> typ = `Contents)
+      (* >|= List.filter (fun (_, typ) -> typ = `Contents) *)
       >|= List.length
     in Lwt_main.run lwt
 
   let is_empty s =
     (size s) == 0
 
-  let elements s =
+  let keys s =
     let lwt =
       Store.master s
       >>= fun master -> Store.tree master
       >>= fun tree -> Store.Tree.list tree ["vals"]
-      >>= Lwt_list.map_p (fun (x, _) ->
-          Store.get master ["vals"; x])
+      >|= List.map(fst)
+    in Lwt_main.run lwt
+
+  let values s =
+    let lwt =
+      Store.master s
+      >>= fun master -> Store.tree master
+      >>= fun tree -> Store.Tree.list tree ["vals"]
+      >>= Lwt_list.map_p (fun (x, _) -> Store.get master ["vals"; x])
       >|= List.map Eq.of_string
     in Lwt_main.run lwt
+
+  let map s =
+    let lwt =
+      Store.of_branch s "map--alpha"
+      >>= fun branched_store -> Store.set branched_store
+        ~info:(Irmin_unix.info ~author:"map" "%s" "Issuing map")
+        ["map_request"]
+        "map_contents"
+
+    in Lwt_main.run lwt; s
+
+  (* Push a map_request onto the master branch *)
+  (* Create a new branch *)
+  (* Wait for the request to become empty *)
+  (* Return the result *)
+
+    (* let ltw =
+     *   Store.tree s
+     *   >>= fun tree -> Store.Tree.list tree ["vals"]
+     *     >>= Lwt_list.map_p (fun (x, _)) *)
 end

@@ -10,4 +10,4 @@ module Ops = struct
   let iter x = x + 1
 end
 
-module IntSet = Set.Make(Int)(Ops)
+module IntMap = Map.Make(Int)(Ops)
