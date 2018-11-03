@@ -3,7 +3,7 @@ install: wget https://raw.githubusercontent.com/ocaml/ocaml-ci-scripts/master/.t
 script:
   - bash -ex .travis-ocaml.sh
   - eval $(opam config env)
-  - opam install --yes dune cmdliner fmt irmin irmin-unix logs alcotest
+  - opam install --yes dune alcotest cmdliner fmt irmin irmin-unix logs lwt ocamlgraph
   - make test
 env:
   - OCAML_VERSION=4.05
