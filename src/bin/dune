@@ -1,5 +1,0 @@
-(executable
-  (name        main)
-  (public_name trace-rpc)
-  (package     trace_rpc)
-  (libraries   trace_rpc))

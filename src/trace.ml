@@ -1,3 +1,3 @@
 
-module Cli = Cli
+module Worker = Worker
 module Server = Server

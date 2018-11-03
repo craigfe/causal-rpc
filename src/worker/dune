@@ -1,5 +1,5 @@
 (executable
-  (name        main)
-  (public_name trace-client)
+  (name main)
+  (public_name worker)
   (package     trace_rpc)
   (libraries   trace_rpc))
