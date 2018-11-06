@@ -30,12 +30,12 @@ end
 
 module Store = Irmin_unix.Git.FS.KV(Irmin.Contents.String)
 
-module Make(Eq : EqualityType) (Op: Operations with type t = Eq.t) = struct
+module Make (Eq : EqualityType) (Op: Operations with type t = Eq.t) = struct
   type key = string
   type value = Eq.t
 
-  type t = Store.repo
-  (* A map is a directory in an Irmin Key-value store *)
+  type t = Store.t
+  (* A map is a branch in an Irmin Key-value store *)
 
   let generate_random_directory () =
     Misc.generate_rand_string ~length:20 ()
@@ -49,73 +49,69 @@ module Make(Eq : EqualityType) (Op: Operations with type t = Eq.t) = struct
     let ret_code = Sys.command ("rm -rf " ^ directory) in begin
       if (ret_code <> 0) then invalid_arg "Unable to delete directory";
 
-      Lwt_main.run (Store.Repo.v config)
+      let lwt = Store.Repo.v config
+        >>= fun repo -> Store.of_branch repo "master"
+      in Lwt_main.run lwt
     end
 
   let mem key m =
     let lwt =
-      Store.master m
-      >>= fun m -> Store.tree m
+      Store.tree m
       >>= fun tree -> Store.Tree.list tree ["vals"]
       >|= List.exists (fun (x,_) -> x = key)
     in Lwt_main.run lwt
 
-  let add key value s =
+  let add key value m =
     let str_val = Eq.to_string value in
     let lwt =
-      Store.master s
-      >>= fun master -> Store.set master
+      Store.set m
         ~info:(Irmin_unix.info ~author:"test" "Committing %s" str_val)
         ["vals"; key]
         str_val
-    in Lwt_main.run lwt; s
+    in Lwt_main.run lwt; m
 
   let remove _ _ = invalid_arg "TODO"
 
-  let size s =
+  let size m =
     let lwt =
-      Store.master s
-      >>= Store.tree
+      Store.tree m
       >>= fun tree -> Store.Tree.list tree ["vals"]
       (* >|= List.filter (fun (_, typ) -> typ = `Contents) *)
       >|= List.length
     in Lwt_main.run lwt
 
-  let is_empty s =
-    (size s) == 0
+  let is_empty m =
+    (size m) == 0
 
-  let keys s =
+  let keys m =
     let lwt =
-      Store.master s
-      >>= fun master -> Store.tree master
+      Store.tree m
       >>= fun tree -> Store.Tree.list tree ["vals"]
       >|= List.map(fst)
     in Lwt_main.run lwt
 
-  let values s =
+  let values m =
     let lwt =
-      Store.master s
-      >>= fun master -> Store.tree master
+      Store.tree m
       >>= fun tree -> Store.Tree.list tree ["vals"]
-      >>= Lwt_list.map_p (fun (x, _) -> Store.get master ["vals"; x])
+      >>= Lwt_list.map_p (fun (x, _) -> Store.get m ["vals"; x])
       >|= List.map Eq.of_string
     in Lwt_main.run lwt
 
-  let map s =
+  let map m =
     let lwt =
 
       (* TODO: ensure this name doesn't collide with existing branches *)
       let map_name = "map--" ^ Misc.generate_rand_string ~length:8 () in
       Logs.debug (fun m -> m "Map operation issued. Branch name %s" map_name);
 
-      Store.master s
 
       (* Push a map_request onto the master branch *)
-      >>= fun m -> Store.set m
+      Store.set m
         ~info:(Irmin_unix.info ~author:"map" "Issuing map") ["map_request"] map_name
 
       (* Create a new branch to isolate the operation *)
-      >>= fun _ -> Store.of_branch s map_name
+      >>= fun _ -> Store.of_branch (Store.repo m) map_name
       >>= fun branch -> Store.set ~info:(Irmin_unix.info ~author:"map" "specifying workload") branch ["todo"] "true"
 
       (* Wait for todo to be set to false *)
@@ -124,7 +120,7 @@ module Make(Eq : EqualityType) (Op: Operations with type t = Eq.t) = struct
       (* TODO: Merge the map branch into master *)
       >|= fun () -> ()
 
-    in Lwt_main.run lwt; s
+    in Lwt_main.run lwt; m
 
   (* Wait for the request to become empty *)
   (* Return the result *)

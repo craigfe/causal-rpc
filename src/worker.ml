@@ -8,7 +8,7 @@ let upstream uri branch =
   if String.sub uri 0 7 = "file://" then
     let dir = String.sub uri 7 (String.length uri - 7) in
     let lwt =
-      Irmin_git.config ~bare:true dir
+      Irmin_git.config dir
       |> Store.Repo.v
       >>= fun repo -> Store.of_branch repo branch
       >|= Irmin.remote_store (module Store)
@@ -34,7 +34,7 @@ let run
 
   Logs.app (fun m -> m "Initialising worker with name %s for client %s" name client);
 
-  let config = Irmin_git.config ~bare:true dir in
+  let config = Irmin_git.config ~bare:false dir in
   let upstr = upstream client "master" in
   let poll_frequency = 5 in
 
