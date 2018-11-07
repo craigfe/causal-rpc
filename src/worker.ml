@@ -9,6 +9,8 @@ module type W = sig
 end
 
 module Make (Eq : Map.EqualityType) (Op: Map.Operations with type t = Eq.t) = struct
+  module Map = Map.Make(Eq)(Op)
+
   type value = Eq.t
 
   (** Get an Irmin.store at a local or remote URI. *)
@@ -69,24 +71,16 @@ module Make (Eq : Map.EqualityType) (Op: Map.Operations with type t = Eq.t) = st
           let remote = upstream client br_name in
           Store.of_branch s br_name
           >>= fun local_br -> Sync.pull_exn local_br remote `Set
-          >>= fun () -> Store.tree local_br
+          >|= (fun () -> Map.of_store local_br)
 
           (* TODO: Check that there is work to be done *)
 
-          >>= (Logs.info (fun m -> m "Checked out branch %s" br_name);
-
-               (* Get a list of all (key, value) pairs *)
-               fun tree -> Store.Tree.list tree ["vals"])
-          >>= Lwt_list.map_p (fun (key, _) -> Store.get local_br ["vals"; key]
-                               >|= fun value -> Logs.warn (fun m -> m "k(%s) v(%s)" key value); (key, value))
+          (* Get a list of all (key, value) pairs *)
+          >|= (fun map -> (map, List.map (fun k -> (k, Map.find k map)) (Map.keys map)))
 
           (* Perform the 'iter' operation to each value *)
-          >>= Lwt_list.map_s (fun (key, value) -> (* HACK: parallelising this breaks for some reason *)
-              Store.set local_br
-                ~info:(Irmin_unix.info ~author:"client" "Performing work")
-                ["vals"; key]
-                (value |> Eq.of_string |> Op.iter |> Eq.to_string)
-            )
+          >|= (fun (map, kvs) -> List.iter
+                  (fun (key, value) -> ignore (Map.add key (Op.iter value) map)) kvs)
 
           (* TODO: Set todo to false *)
 
@@ -94,8 +88,7 @@ module Make (Eq : Map.EqualityType) (Op: Map.Operations with type t = Eq.t) = st
 
           (* Push the changes *)
           >>= fun _ -> Sync.push_exn local_br remote
-
-          >|= (fun _ -> Logs.info (fun m -> m "Changes pushed to branch %s" br_name))
+          >|= fun _ -> Logs.info (fun m -> m "Changes pushed to branch %s" br_name)
 
         | None ->
           Logs.debug (fun m -> m "Found no map request. Sleeping for %d seconds." poll_frequency);
