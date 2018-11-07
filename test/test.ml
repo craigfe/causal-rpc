@@ -39,15 +39,25 @@ let test_map () =
     |> (fun (s1, s2) -> (IntMap.add "b" 5 s1, s2))
     |> (fun (s1, s2) -> (s1, IntMap.add "a" 1 s2))
     |> (fun (_, s2) -> IntMap.values s2)
-    |> Alcotest.(check (list int)) "maps don't interfere with each other" [1];
+    |> Alcotest.(check (list int)) "Maps don't interfere with each other" [1];
 
     IntMap.empty ~directory:(root ^ "test-0008") ()
+    |> IntMap.add "a" 5
+    |> IntMap.find "a"
+    |> Alcotest.(check int) "Stored bindings can be found" 5;
+
+
+    IntMap.empty ~directory:(root ^ "test-0009") ()
+    |> fun map -> Alcotest.check_raises "Attempting to find a missing binding causes a Not_found exception" Not_found (fun () -> ignore (IntMap.find "not_present" map));
+
+
+    IntMap.empty ~directory:(root ^ "test-0010") ()
     |> IntMap.add "a" 5
     |> IntMap.add "b" 32
     |> IntMap.add "c" (-15)
     |> IntMap.values
     |> List.sort compare
-    |> Alcotest.(check (list int)) "Contents are retrieved correctly" [-15; 5; 32];
+    |> Alcotest.(check (list int)) "Values are retrieved correctly" [-15; 5; 32];
 
   end
 
@@ -74,7 +84,7 @@ let suite = [
 	"type", [
 	 "base", `Quick, test_base;
    "map", `Quick, test_map;
-   "increment", `Quick, test_increment;
+   (* "increment", `Quick, test_increment; *)
 	]
 ]
 

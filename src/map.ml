@@ -21,6 +21,7 @@ module type S = sig
   val is_empty: t -> bool
   val mem: key -> t -> bool
   val add: key -> value -> t -> t
+  val find: key -> t -> value
   val remove: key -> t -> t
   val size: t -> int
   val keys: t -> key list
@@ -69,6 +70,16 @@ module Make (Eq : EqualityType) (Op: Operations with type t = Eq.t) = struct
         ["vals"; key]
         str_val
     in Lwt_main.run lwt; m
+
+  let find key m =
+    let lwt =
+        (* Get the value from the store and deserialise it *)
+      Store.get m ["vals"; key]
+      >|= Eq.of_string
+
+    in try
+      Lwt_main.run lwt
+    with Invalid_argument _ -> raise Not_found
 
   let remove _ _ = invalid_arg "TODO"
 

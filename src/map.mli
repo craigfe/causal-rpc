@@ -39,6 +39,10 @@ module type S = sig
       plus a binding of [x] to [y]. If [x] was already bound in [m],
       its previous binding is replaced. *)
 
+  val find: key -> t -> value
+  (** [find x m] returns the current binding of [x] in [m],
+      or raises [Not_found] if no such binding exists. *)
+
   val remove: key -> t -> t
   (** [remove x m] returns a map containing the same bindings as [m],
       except for [x] which is unbound in the returned map. *)
