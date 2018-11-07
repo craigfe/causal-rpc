@@ -11,3 +11,4 @@ module Ops = struct
 end
 
 module IntMap = Map.Make(Int)(Ops)
+module IntWorker = Worker.Make(Int)(Ops)

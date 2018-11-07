@@ -61,5 +61,5 @@ end
 
 module Make (Eq : EqualityType) (Op: Operations with type t = Eq.t) : S
   with type value = Eq.t
-(** Functor building an implementation of the set structure
+(** Functor building an implementation of the map structure
     given an equality type and a set of operations on that type. *)
