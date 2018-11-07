@@ -28,6 +28,10 @@ module type S = sig
   val empty: ?directory:string -> unit -> t
   (** The empty map. *)
 
+  val of_store: Irmin_unix.Git.FS.KV(Irmin.Contents.String).t -> t
+  (* TODO: change this to take a more general type *)
+  (** Return the map corresponding to an underlying store representation *)
+
   val is_empty: t -> bool
   (** Test whether a map is empty or not. *)
 

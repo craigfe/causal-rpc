@@ -2,6 +2,7 @@ open Lwt.Infix
 
 module type EqualityType = sig
   type t
+
   val (=): t -> t -> bool
   val of_string: string -> t
   val to_string: t -> string
@@ -18,6 +19,7 @@ module type S = sig
   type t
 
   val empty: ?directory:string -> unit -> t
+  val of_store: Irmin_unix.Git.FS.KV(Irmin.Contents.String).t -> t
   val is_empty: t -> bool
   val mem: key -> t -> bool
   val add: key -> value -> t -> t
@@ -54,6 +56,8 @@ module Make (Eq : EqualityType) (Op: Operations with type t = Eq.t) = struct
         >>= fun repo -> Store.of_branch repo "master"
       in Lwt_main.run lwt
     end
+
+  let of_store s = s
 
   let mem key m =
     let lwt =
