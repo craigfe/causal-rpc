@@ -38,6 +38,33 @@ module Make (Val : Irmin.Contents.S) (Op: Map.Operations with type t = Val.t) = 
     Logs.info (fun m -> m "No directory supplied. Using default directory %s" dir);
     dir
 
+  (* Checkout br_name in store and pull from client, then perform any work still to
+     do on that branch *)
+  let handle_request store client br_name =
+
+    (* Checkout the branch *)
+    let remote = upstream client br_name in
+    Store.of_branch store br_name
+    >>= fun local_br -> Sync.pull_exn local_br remote `Set
+    >|= (fun () -> Map.of_store local_br)
+
+    (* TODO: Check that there is work to be done *)
+
+    (* Get a list of all (key, value) pairs *)
+    >|= (fun map -> (map, List.map (fun k -> (k, Map.find k map)) (Map.keys map)))
+
+    (* Perform the 'iter' operation to each value *)
+    >|= (fun (map, kvs) -> List.iter
+            (fun (key, value) -> ignore (Map.add key (Op.iter value) map)) kvs)
+
+    (* TODO: Set todo to false *)
+
+    >|= (fun _ -> Logs.info (fun m -> m "Completed operation. Pushing changes to branch %s" br_name))
+
+    (* Push the changes *)
+    >>= fun _ -> Sync.push_exn local_br remote
+    >|= fun _ -> Logs.info (fun m -> m "Changes pushed to branch %s" br_name)
+
   let run
       ?(name=random_name())
       ?(dir=directory_from_name name)
@@ -65,33 +92,10 @@ module Make (Val : Irmin.Contents.S) (Op: Map.Operations with type t = Val.t) = 
         | Some br_name_val ->
 
           (match br_name_val with
-          | Branch_name br_name ->
-
-            let _ = Logs.info (fun m -> m "Detected a map request on branch %s" br_name) in
-            (* Checkout the branch *)
-            let remote = upstream client br_name in
-            Store.of_branch s br_name
-            >>= fun local_br -> Sync.pull_exn local_br remote `Set
-            >|= (fun () -> Map.of_store local_br)
-
-            (* TODO: Check that there is work to be done *)
-
-            (* Get a list of all (key, value) pairs *)
-            >|= (fun map -> (map, List.map (fun k -> (k, Map.find k map)) (Map.keys map)))
-
-            (* Perform the 'iter' operation to each value *)
-            >|= (fun (map, kvs) -> List.iter
-                    (fun (key, value) -> ignore (Map.add key (Op.iter value) map)) kvs)
-
-            (* TODO: Set todo to false *)
-
-            >|= (fun _ -> Logs.info (fun m -> m "Completed operation. Pushing changes to branch %s" br_name))
-
-            (* Push the changes *)
-            >>= fun _ -> Sync.push_exn local_br remote
-            >|= fun _ -> Logs.info (fun m -> m "Changes pushed to branch %s" br_name)
-
-          | _ -> invalid_arg "Can't happen by design")
+           | Branch_name br_name ->
+             Logs.info (fun m -> m "Detected a map request on branch %s" br_name);
+             handle_request s client br_name
+           | _ -> invalid_arg "Can't happen by design")
 
         | None ->
           Logs.debug (fun m -> m "Found no map request. Sleeping for %d seconds." poll_frequency);
