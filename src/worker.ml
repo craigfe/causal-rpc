@@ -5,7 +5,7 @@ module type W = sig
   val run: ?name:string -> ?dir:string -> client:string -> unit -> unit Lwt.t
 end
 
-module Make (Val : Irmin.Contents.S) (Op: Map.Operations with type t = Val.t) = struct
+module Make (Val : Irmin.Contents.S) (Impl: Interface.IMPL with type t = Val.t) = struct
   module Map = Map.Make(Val)(Op)
 
   module Contents = Map.Contents

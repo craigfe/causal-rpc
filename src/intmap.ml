@@ -19,10 +19,22 @@ module Int: Irmin.Contents.S with type t = int64 = struct
     let merge = Irmin.Merge.(option (v t merge))
 end
 
-module Ops = struct
+module Definition(I: Interface.S): Interface.DESC = struct
+  open I
   type t = int64
-  let iter = Int64.add Int64.one
+
+  let api = declare ["increment"; "double"]
 end
 
-module IntMap = Map.Make(Int)(Ops)
-module IntWorker = Worker.Make(Int)(Ops)
+module Implementation(I: Interface.S): Interface.IMPL = struct
+  open I
+  type t = int64
+
+  let increment = Int64.add Int64.one
+  let double = Int64.mul (Int64.of_int 2)
+
+  let api = implement [("increment", increment); ("double", double)]
+end
+
+module IntMap = Map.Make(Int)(Definition(Interface.Make))
+module IntWorker = Worker.Make(Int)(Implementation(Interface.Make))

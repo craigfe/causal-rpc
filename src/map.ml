@@ -1,10 +1,5 @@
 open Lwt.Infix
 
-module type Operations = sig
-  type t
-  val iter: t -> t
-end
-
 type 'v contents =
   | Value of 'v
   | Branch_name of string
@@ -54,7 +49,7 @@ module type S = sig
   val map: t -> t
 end
 
-module Make (Val : Irmin.Contents.S) (Op: Operations with type t = Val.t) = struct
+module Make (Val : Irmin.Contents.S) (Desc: Interface.DESC with type t = Val.t) = struct
   module Contents = MakeContents(Val)
   module Store = Irmin_unix.Git.FS.KV(Contents)
   module Sync = Irmin.Sync(Store)
