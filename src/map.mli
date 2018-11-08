@@ -1,12 +1,3 @@
-module type EqualityType = sig
-  type t
-  val (=) : t -> t -> bool
-  val of_string: string -> t
-  val to_string: t -> string
-
-end
-(** Input signature of the functor {!Set.Make}. *)
-
 module type Operations = sig
   type t
 
@@ -14,6 +5,13 @@ module type Operations = sig
       operator on sets while we don't have a functor implementation *)
   val iter: t -> t
 end
+
+type 'v contents =
+  | Value of 'v
+  | Branch_name of string
+
+module MakeContents (Val: Irmin.Contents.S) : Irmin.Contents.S
+  with type t = Val.t contents
 
 module type S = sig
   type key = string
@@ -25,12 +23,16 @@ module type S = sig
   type t
   (** The type of maps from type [key] to type [value] *)
 
+  module Contents: Irmin.Contents.S with type t = value contents
+  module Store: Irmin.KV with type contents = Contents.t
+  module Sync: Irmin.SYNC with type db = Store.t
+
+  (* TODO: make this a more general type *)
+  val of_store: Sync.db -> t
+  (** Return the map corresponding to an underlying store representation *)
+
   val empty: ?directory:string -> unit -> t
   (** The empty map. *)
-
-  val of_store: Irmin_unix.Git.FS.KV(Irmin.Contents.String).t -> t
-  (* TODO: change this to take a more general type *)
-  (** Return the map corresponding to an underlying store representation *)
 
   val is_empty: t -> bool
   (** Test whether a map is empty or not. *)
@@ -67,7 +69,7 @@ module type S = sig
       replaced by the result of applying _a_ function to [a] *)
 end
 
-module Make (Eq : EqualityType) (Op: Operations with type t = Eq.t) : S
-  with type value = Eq.t
+module Make (Val : Irmin.Contents.S) (Op: Operations with type t = Val.t) : S
+  with type value = Val.t
 (** Functor building an implementation of the map structure
     given an equality type and a set of operations on that type. *)

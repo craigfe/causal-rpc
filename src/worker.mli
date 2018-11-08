@@ -8,7 +8,7 @@ module type W = sig
       in repository ~dir *)
 end
 
-module Make (Eq: Map.EqualityType) (Op: Map.Operations with type t = Eq.t) : W
-  with type value = Eq.t
+module Make (Val: Irmin.Contents.S) (Op: Map.Operations with type t = Val.t) : W
+  with type value = Val.t
 (** Functor building a worker that operates on the map structure
     given an equality type and a set of operations on that type. *)

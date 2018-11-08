@@ -15,7 +15,7 @@ let test_map () =
     |> Alcotest.(check bool) "The empty map is empty" true;
 
     IntMap.empty ~directory:(root ^ "test-0002") ()
-    |> IntMap.add "a" 1
+    |> IntMap.add "a" Int64.one
     |> IntMap.is_empty
     |> Alcotest.(check bool) "A non-empty map is not empty" false;
 
@@ -24,38 +24,37 @@ let test_map () =
     |> Alcotest.(check int) "The empty map has size 0" 0;
 
     IntMap.empty ~directory:(root ^ "test-0004") ()
-    |> IntMap.add "a" 1
-    |> IntMap.add "b" 2
+    |> IntMap.add "a" Int64.zero
+    |> IntMap.add "b" Int64.one
     |> IntMap.size
     |> Alcotest.(check int) "Size behaves reasonably" 2;
 
     IntMap.empty ~directory:(root ^ "test-0005") ()
-    |> IntMap.add "one_hundred" 100
-    |> IntMap.mem "one_hundred"
+    |> IntMap.add "one" Int64.one
+    |> IntMap.mem "one"
     |> Alcotest.(check bool) "Added values are members of the map" true;
 
     (IntMap.empty ~directory:(root ^ "test-0006") (), IntMap.empty ~directory:(root ^ "test-0007") ())
-    |> (fun (s1, s2) -> (IntMap.add "a" 10 s1, s2))
-    |> (fun (s1, s2) -> (IntMap.add "b" 5 s1, s2))
-    |> (fun (s1, s2) -> (s1, IntMap.add "a" 1 s2))
+    |> (fun (s1, s2) -> (IntMap.add "a" (Int64.of_int 10) s1, s2))
+    |> (fun (s1, s2) -> (IntMap.add "b" (Int64.of_int 5) s1, s2))
+    |> (fun (s1, s2) -> (s1, IntMap.add "a" Int64.one s2))
     |> (fun (_, s2) -> IntMap.values s2)
-    |> Alcotest.(check (list int)) "Maps don't interfere with each other" [1];
+    |> Alcotest.(check (list int64)) "Maps don't interfere with each other" [Int64.one];
 
     IntMap.empty ~directory:(root ^ "test-0008") ()
-    |> IntMap.add "a" 5
+    |> IntMap.add "a" (Int64.of_int 5)
     |> IntMap.find "a"
-    |> Alcotest.(check int) "Stored bindings can be found" 5;
-
+    |> Alcotest.(check int64) "Stored bindings can be found" (Int64.of_int 5);
 
     IntMap.empty ~directory:(root ^ "test-0009") ()
     |> fun map -> Alcotest.check_raises "Attempting to find a missing binding causes a Not_found exception" Not_found (fun () -> ignore (IntMap.find "not_present" map));
 
-
     IntMap.empty ~directory:(root ^ "test-0010") ()
-    |> IntMap.add "a" 5
-    |> IntMap.add "b" 32
-    |> IntMap.add "c" (-15)
+    |> IntMap.add "a" (Int64.of_int 5)
+    |> IntMap.add "b" (Int64.of_int 32)
+    |> IntMap.add "c" (Int64.of_int (-15))
     |> IntMap.values
+    |> List.map Int64.to_int
     |> List.sort compare
     |> Alcotest.(check (list int)) "Values are retrieved correctly" [-15; 5; 32];
 
@@ -70,11 +69,12 @@ let test_increment () =
     let root = "/tmp/irmin/increment/" in
 
     IntMap.empty ~directory:(root ^ "test-0001") ()
-    |> IntMap.add "a" 1
-    |> IntMap.add "b" 10
-    |> IntMap.add "c" 100
+    |> IntMap.add "a" (Int64.of_int 1)
+    |> IntMap.add "b" (Int64.of_int 10)
+    |> IntMap.add "c" (Int64.of_int 100)
     |> IntMap.map
     |> IntMap.values
+    |> List.map Int64.to_int
     |> List.sort compare
     |> Alcotest.(check (list int)) "The map increment function works as expected" [2; 11; 101];
 

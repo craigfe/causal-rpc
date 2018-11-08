@@ -1,17 +1,18 @@
 open Lwt.Infix
 
-module Store = Irmin_unix.Git.FS.KV(Irmin.Contents.String)
-module Sync = Irmin.Sync(Store)
-
 module type W = sig
   type value
   val run: ?name:string -> ?dir:string -> client:string -> unit -> unit Lwt.t
 end
 
-module Make (Eq : Map.EqualityType) (Op: Map.Operations with type t = Eq.t) = struct
-  module Map = Map.Make(Eq)(Op)
+module Make (Val : Irmin.Contents.S) (Op: Map.Operations with type t = Val.t) = struct
+  module Map = Map.Make(Val)(Op)
 
-  type value = Eq.t
+  module Contents = Map.Contents
+  module Store = Map.Store
+  module Sync = Map.Sync
+
+  type value = Val.t
 
   (** Get an Irmin.store at a local or remote URI. *)
   let upstream uri branch =
@@ -50,45 +51,47 @@ module Make (Eq : Map.EqualityType) (Op: Map.Operations with type t = Eq.t) = st
 
     Store.Repo.v config
     >>= fun s -> Store.master s
-    >>= fun master -> Store.set master
-      ~info:(Irmin_unix.info ~author:"worker" "Initial commit")
-      [".init"]
-      "Some initial content"
-    >>= fun () -> Sync.pull_exn master upstr `Set
+    >>= fun master -> Sync.pull_exn master upstr `Set
 
     >|= fun _ -> while true do
       let lwt =
+
         (* Pull and check the map_request file for queued work *)
         Sync.pull_exn master upstr `Set
         >>= fun _ -> Store.find master ["map_request"]
         >>= fun branch -> match branch with
 
         (* A map request has been issued *)
-        | Some br_name ->
-          let _ = Logs.info (fun m -> m "Detected a map request on branch %s" br_name) in
+        | Some br_name_val ->
 
-          (* Checkout the branch *)
-          let remote = upstream client br_name in
-          Store.of_branch s br_name
-          >>= fun local_br -> Sync.pull_exn local_br remote `Set
-          >|= (fun () -> Map.of_store local_br)
+          (match br_name_val with
+          | Branch_name br_name ->
 
-          (* TODO: Check that there is work to be done *)
+            let _ = Logs.info (fun m -> m "Detected a map request on branch %s" br_name) in
+            (* Checkout the branch *)
+            let remote = upstream client br_name in
+            Store.of_branch s br_name
+            >>= fun local_br -> Sync.pull_exn local_br remote `Set
+            >|= (fun () -> Map.of_store local_br)
 
-          (* Get a list of all (key, value) pairs *)
-          >|= (fun map -> (map, List.map (fun k -> (k, Map.find k map)) (Map.keys map)))
+            (* TODO: Check that there is work to be done *)
 
-          (* Perform the 'iter' operation to each value *)
-          >|= (fun (map, kvs) -> List.iter
-                  (fun (key, value) -> ignore (Map.add key (Op.iter value) map)) kvs)
+            (* Get a list of all (key, value) pairs *)
+            >|= (fun map -> (map, List.map (fun k -> (k, Map.find k map)) (Map.keys map)))
 
-          (* TODO: Set todo to false *)
+            (* Perform the 'iter' operation to each value *)
+            >|= (fun (map, kvs) -> List.iter
+                    (fun (key, value) -> ignore (Map.add key (Op.iter value) map)) kvs)
 
-          >|= (fun _ -> Logs.info (fun m -> m "Completed operation. Pushing changes to branch %s" br_name))
+            (* TODO: Set todo to false *)
 
-          (* Push the changes *)
-          >>= fun _ -> Sync.push_exn local_br remote
-          >|= fun _ -> Logs.info (fun m -> m "Changes pushed to branch %s" br_name)
+            >|= (fun _ -> Logs.info (fun m -> m "Completed operation. Pushing changes to branch %s" br_name))
+
+            (* Push the changes *)
+            >>= fun _ -> Sync.push_exn local_br remote
+            >|= fun _ -> Logs.info (fun m -> m "Changes pushed to branch %s" br_name)
+
+          | _ -> invalid_arg "Can't happen by design")
 
         | None ->
           Logs.debug (fun m -> m "Found no map request. Sleeping for %d seconds." poll_frequency);

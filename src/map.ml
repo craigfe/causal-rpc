@@ -1,16 +1,35 @@
 open Lwt.Infix
 
-module type EqualityType = sig
-  type t
-
-  val (=): t -> t -> bool
-  val of_string: string -> t
-  val to_string: t -> string
-end
-
 module type Operations = sig
   type t
   val iter: t -> t
+end
+
+type 'v contents =
+  | Value of 'v
+  | Branch_name of string
+
+module MakeContents (Val: Irmin.Contents.S) : Irmin.Contents.S
+  with type t = Val.t contents = struct
+
+  type t = Val.t contents
+
+  let t =
+    let open Irmin.Type in
+    variant "contents" (fun value branch_name -> function
+        | Value v -> value v
+        | Branch_name n -> branch_name n)
+    |~ case1 "Value" Val.t (fun v -> Value v)
+    |~ case1 "Branch_name" string (fun s -> Branch_name s)
+    |> sealv
+
+  let pp = Irmin.Type.pp_json t
+
+  let of_string s =
+    let decoder = Jsonm.decoder (`String s) in
+    Irmin.Type.decode_json t decoder
+
+  let merge = Irmin.Merge.(option (idempotent t))
 end
 
 module type S = sig
@@ -18,8 +37,12 @@ module type S = sig
   type value
   type t
 
+  module Contents: Irmin.Contents.S with type t = value contents
+  module Store: Irmin.KV with type contents = Contents.t
+  module Sync: Irmin.SYNC with type db = Store.t
+
+  val of_store: Sync.db -> t
   val empty: ?directory:string -> unit -> t
-  val of_store: Irmin_unix.Git.FS.KV(Irmin.Contents.String).t -> t
   val is_empty: t -> bool
   val mem: key -> t -> bool
   val add: key -> value -> t -> t
@@ -31,13 +54,15 @@ module type S = sig
   val map: t -> t
 end
 
-module Store = Irmin_unix.Git.FS.KV(Irmin.Contents.String)
+module Make (Val : Irmin.Contents.S) (Op: Operations with type t = Val.t) = struct
+  module Contents = MakeContents(Val)
+  module Store = Irmin_unix.Git.FS.KV(Contents)
+  module Sync = Irmin.Sync(Store)
 
-module Make (Eq : EqualityType) (Op: Operations with type t = Eq.t) = struct
   type key = string
-  type value = Eq.t
+  type value = Val.t
 
-  type t = Store.t
+  type t = Sync.db
   (* A map is a branch in an Irmin Key-value store *)
 
   let generate_random_directory () =
@@ -67,19 +92,20 @@ module Make (Eq : EqualityType) (Op: Operations with type t = Eq.t) = struct
     in Lwt_main.run lwt
 
   let add key value m =
-    let str_val = Eq.to_string value in
     let lwt =
       Store.set m
-        ~info:(Irmin_unix.info ~author:"test" "Committing %s" str_val)
+        ~info:(Irmin_unix.info ~author:"test" "Committing to key %s" key)
         ["vals"; key]
-        str_val
+        (Value value)
     in Lwt_main.run lwt; m
 
   let find key m =
     let lwt =
-        (* Get the value from the store and deserialise it *)
+      (* Get the value from the store and deserialise it *)
       Store.get m ["vals"; key]
-      >|= Eq.of_string
+      >|= fun value -> match value with
+      | Value v -> v
+      | _ -> invalid_arg "Can't happen by design"
 
     in try
       Lwt_main.run lwt
@@ -110,7 +136,10 @@ module Make (Eq : EqualityType) (Op: Operations with type t = Eq.t) = struct
       Store.tree m
       >>= fun tree -> Store.Tree.list tree ["vals"]
       >>= Lwt_list.map_p (fun (x, _) -> Store.get m ["vals"; x])
-      >|= List.map Eq.of_string
+      >|= List.map (fun value -> match value with
+          | Value v -> v
+          | _ -> invalid_arg "Can't happen by design"
+        )
     in Lwt_main.run lwt
 
   let map m =
@@ -120,17 +149,16 @@ module Make (Eq : EqualityType) (Op: Operations with type t = Eq.t) = struct
       let map_name = "map--" ^ Misc.generate_rand_string ~length:8 () in
       Logs.debug (fun m -> m "Map operation issued. Branch name %s" map_name);
 
-
       (* Push a map_request onto the master branch *)
       Store.set m
-        ~info:(Irmin_unix.info ~author:"map" "Issuing map") ["map_request"] map_name
+        ~info:(Irmin_unix.info ~author:"map" "Issuing map") ["map_request"] (Branch_name map_name)
 
       (* Create a new branch to isolate the operation *)
       >>= fun _ -> Store.of_branch (Store.repo m) map_name
-      >>= fun branch -> Store.set ~info:(Irmin_unix.info ~author:"map" "specifying workload") branch ["todo"] "true"
+      >>= fun branch -> Store.set ~info:(Irmin_unix.info ~author:"map" "specifying workload") branch ["todo"] (Branch_name "true")
 
       (* Wait for todo to be set to false *)
-      >|= (fun _ -> while Lwt_main.run(Store.get branch ["todo"]) = "true" do Unix.sleep 1 done)
+      >|= (fun _ -> while Lwt_main.run(Store.get branch ["todo"]) = (Branch_name "true") do Unix.sleep 1 done)
 
       (* TODO: Merge the map branch into master *)
       >|= fun () -> ()
