@@ -1,0 +1,3 @@
+(library
+  (name        integer_increment)
+  (libraries   trace_rpc))
