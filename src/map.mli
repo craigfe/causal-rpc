@@ -1,5 +1,8 @@
+
+type task = string * string
 type 'v contents =
   | Value of 'v
+  | Task_queue of (task list * task list)
   | Branch_name of string
 
 module MakeContents (Val: Irmin.Contents.S) : Irmin.Contents.S
@@ -11,6 +14,9 @@ module type S = sig
 
   type value
   (** The type of the map values *)
+
+  type operation = string
+  (** The type of operations to be performed on the map *)
 
   type t
   (** The type of maps from type [key] to type [value] *)
@@ -54,8 +60,7 @@ module type S = sig
   val values: t -> value list
   (** Return a list of values in the map *)
 
-  (* TODO: generalise this to one of a set of functions *)
-  val map: t -> t
+  val map: operation -> t -> t
   (** [map m] returns a map with the same domain as [m] in which
       the associated value [a] of all bindings of [m] have been
       replaced by the result of applying _a_ function to [a] *)
@@ -63,5 +68,6 @@ end
 
 module Make (Val : Irmin.Contents.S) (Desc: Interface.DESC with type t = Val.t) : S
   with type value = Val.t
+   and type operation = Interface.Description.op
 (** Functor building an implementation of the map structure
     given an equality type and a set of operations on that type. *)

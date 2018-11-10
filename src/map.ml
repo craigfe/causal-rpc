@@ -1,7 +1,15 @@
 open Lwt.Infix
 
+(* A task is a key and an operation to perform on the associated binding *)
+type task = string * string
+
+let task =
+  let open Irmin.Type in
+  pair string string
+
 type 'v contents =
   | Value of 'v
+  | Task_queue of (task list * task list)
   | Branch_name of string
 
 module MakeContents (Val: Irmin.Contents.S) : Irmin.Contents.S
@@ -11,10 +19,12 @@ module MakeContents (Val: Irmin.Contents.S) : Irmin.Contents.S
 
   let t =
     let open Irmin.Type in
-    variant "contents" (fun value branch_name -> function
+    variant "contents" (fun value task_queue branch_name -> function
         | Value v -> value v
+        | Task_queue q -> task_queue q
         | Branch_name n -> branch_name n)
     |~ case1 "Value" Val.t (fun v -> Value v)
+    |~ case1 "Task_queue" (pair (list task) (list task)) (fun q -> Task_queue q)
     |~ case1 "Branch_name" string (fun s -> Branch_name s)
     |> sealv
 
@@ -30,6 +40,8 @@ end
 module type S = sig
   type key = string
   type value
+  type operation = Interface.Description.op
+
   type t
 
   module Contents: Irmin.Contents.S with type t = value contents
@@ -46,7 +58,7 @@ module type S = sig
   val size: t -> int
   val keys: t -> key list
   val values: t -> value list
-  val map: t -> t
+  val map: operation -> t -> t
 end
 
 module Make (Val : Irmin.Contents.S) (Desc: Interface.DESC with type t = Val.t) = struct
@@ -56,6 +68,7 @@ module Make (Val : Irmin.Contents.S) (Desc: Interface.DESC with type t = Val.t) 
 
   type key = string
   type value = Val.t
+  type operation = Interface.Description.op
 
   type t = Sync.db
   (* A map is a branch in an Irmin Key-value store *)
@@ -137,7 +150,27 @@ module Make (Val : Irmin.Contents.S) (Desc: Interface.DESC with type t = Val.t) 
         )
     in Lwt_main.run lwt
 
-  let map m =
+  let get_task_queue_empty branch =
+    let lwt =
+      Store.get branch ["task_queue"]
+      >|= fun q -> match q with
+      | Task_queue ([], []) -> true
+      | Task_queue _ -> false
+      | _ -> invalid_arg "Can't happen by design"
+    in Lwt_main.run lwt
+
+  let generate_task_queue map operation =
+    keys map
+    |> List.map (fun v -> (v, operation))
+    |> (fun ops ->
+        Logs.warn (fun m -> m "Generated task queue of [%s]"
+                      (List.map (fun (a, b) -> Printf.sprintf "(%s, %s)" a b) ops
+                       |> String.concat ", "));
+         ops)
+    |> fun ops -> Task_queue (ops, []) (* Initially there are no pending operations *)
+
+
+  let map operation m =
     let lwt =
 
       (* TODO: ensure this name doesn't collide with existing branches *)
@@ -150,21 +183,18 @@ module Make (Val : Irmin.Contents.S) (Desc: Interface.DESC with type t = Val.t) 
 
       (* Create a new branch to isolate the operation *)
       >>= fun _ -> Store.of_branch (Store.repo m) map_name
-      >>= fun branch -> Store.set ~info:(Irmin_unix.info ~author:"map" "specifying workload") branch ["todo"] (Branch_name "true")
 
-      (* Wait for todo to be set to false *)
-      >|= (fun _ -> while Lwt_main.run(Store.get branch ["todo"]) = (Branch_name "true") do Unix.sleep 1 done)
+      (* Generate and commit the task queue *)
+      >>= fun branch -> Store.set
+        ~info:(Irmin_unix.info ~author:"map" "specifying workload")
+        branch ["task_queue"] (generate_task_queue branch operation)
+
+      (* Wait for the task queue to be empty *)
+      >|= (fun _ -> while not(get_task_queue_empty branch) do Unix.sleep 1 done)
 
       (* TODO: Merge the map branch into master *)
       >|= fun () -> ()
 
     in Lwt_main.run lwt; m
 
-  (* Wait for the request to become empty *)
-  (* Return the result *)
-
-    (* let ltw =
-     *   Store.tree s
-     *   >>= fun tree -> Store.Tree.list tree ["vals"]
-     *     >>= Lwt_list.map_p (fun (x, _)) *)
 end

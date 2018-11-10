@@ -1,21 +1,26 @@
 open Lwt.Infix
 
 module type W = sig
-  type value
+  include Map.S
+  val get_task_opt: Sync.db -> Irmin.remote -> Map.task option Lwt.t
+  val perform_task: t -> Map.task -> t
+  val handle_request: Store.repo -> string -> string -> unit Lwt.t
+
   val run: ?name:string -> ?dir:string -> client:string -> unit -> unit Lwt.t
 end
 
-module Make (Val : Irmin.Contents.S) (Impl: Interface.IMPL with type t = Val.t) = struct
-  module Map = Map.Make(Val)(Op)
+module Make (Map : Map.S) (Impl: Interface.IMPL with type t = Map.value) = struct
+  include Map
 
-  module Contents = Map.Contents
-  module Store = Map.Store
-  module Sync = Map.Sync
-
-  type value = Val.t
+  module I = Interface.Implementation
 
   (** Get an Irmin.store at a local or remote URI. *)
   let upstream uri branch =
+
+    (* It's currently necessary to manually case-split between 'local' remotes
+       using the file local protocol and the standard git protocol
+       https://github.com/mirage/irmin/issues/589 *)
+
     if String.sub uri 0 7 = "file://" then
       let dir = String.sub uri 7 (String.length uri - 7) in
       let lwt =
@@ -38,8 +43,26 @@ module Make (Val : Irmin.Contents.S) (Impl: Interface.IMPL with type t = Val.t) 
     Logs.info (fun m -> m "No directory supplied. Using default directory %s" dir);
     dir
 
-  (* Checkout br_name in store and pull from client, then perform any work still to
-     do on that branch *)
+  let get_task_opt local_br remote =
+    Store.find local_br ["task_queue"]
+    >>= fun q -> match q with
+    | Some Task_queue ((x::xs), pending) ->
+      Store.set local_br ~info:(Irmin_unix.info ~author:"map" "Consuming task") ["task_queue"] (Task_queue (xs, x::pending))
+      >>= fun () -> Sync.push_exn local_br remote
+      >|= fun () -> Some x
+
+    | Some Task_queue ([], _) -> Lwt.return None (* All tasks are pending *)
+    | None -> Lwt.return None (* No task to be performed *)
+    | Some _ -> invalid_arg "Can't happen by design"
+
+  let perform_task map (key, operation) =
+    let old_val = find key map in
+    let operation = (match I.find_operation_opt operation Impl.api with
+      | Some operation -> operation
+      | None -> invalid_arg "Operation not found") in
+    let new_val = operation old_val in
+    add key new_val map
+
   let handle_request store client br_name =
 
     (* Checkout the branch *)
@@ -48,22 +71,17 @@ module Make (Val : Irmin.Contents.S) (Impl: Interface.IMPL with type t = Val.t) 
     >>= fun local_br -> Sync.pull_exn local_br remote `Set
     >|= (fun () -> Map.of_store local_br)
 
-    (* TODO: Check that there is work to be done *)
-
-    (* Get a list of all (key, value) pairs *)
-    >|= (fun map -> (map, List.map (fun k -> (k, Map.find k map)) (Map.keys map)))
-
-    (* Perform the 'iter' operation to each value *)
-    >|= (fun (map, kvs) -> List.iter
-            (fun (key, value) -> ignore (Map.add key (Op.iter value) map)) kvs)
-
-    (* TODO: Set todo to false *)
+    (* Attempt to take a task from the queue *)
+    >>= fun map -> get_task_opt local_br remote
+    >|= (fun task -> match task with
+        | None -> () (* No work to perform. We are done *)
+        | Some t -> ignore (perform_task map t))
 
     >|= (fun _ -> Logs.info (fun m -> m "Completed operation. Pushing changes to branch %s" br_name))
 
     (* Push the changes *)
-    >>= fun _ -> Sync.push_exn local_br remote
-    >|= fun _ -> Logs.info (fun m -> m "Changes pushed to branch %s" br_name)
+    >>= (fun _ -> Sync.push_exn local_br remote)
+    >|= (fun _ -> Logs.info (fun m -> m "Changes pushed to branch %s" br_name))
 
   let run
       ?(name=random_name())
@@ -83,7 +101,7 @@ module Make (Val : Irmin.Contents.S) (Impl: Interface.IMPL with type t = Val.t) 
     >|= fun _ -> while true do
       let lwt =
 
-        (* Pull and check the map_request file for queued work *)
+        (* Pull and check the map_request file for queued jobs *)
         Sync.pull_exn master upstr `Set
         >>= fun _ -> Store.find master ["map_request"]
         >>= fun branch -> match branch with
