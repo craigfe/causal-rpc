@@ -62,6 +62,6 @@ module Make = struct
       | (name, f)::fs -> match Hashtbl.find_opt h name with
         | Some _ -> raise @@ Invalid_definition ("Duplicate function name (" ^ name ^ ") in implementation")
         | None -> Hashtbl.add h name f; aux fs
-    in aux fns
+    in Implementation.of_hashtable (aux fns)
 
 end
