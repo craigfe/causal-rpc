@@ -1,26 +1,44 @@
 module SS = Set.Make(String)
 
-(* An implementation is a map from function names to type-preserving functions *)
-type 'a implementation = (string, ('a -> 'a))  Hashtbl.t
+module Implementation = struct
+  type operation_key = string
 
-(* A description is simply a set of function names *)
-type description = SS.t
+  (* An implementation is a map from function names to type-preserving functions *)
+  type 'a t = (string, ('a -> 'a)) Hashtbl.t
+
+  let of_hashtable i = i
+
+  let find_operation_opt key impl =
+    Hashtbl.find_opt impl key
+end
+
+module Description = struct
+  type op = string
+
+  (* A description is a set of function names *)
+  type t = SS.t
+
+  let of_set s = s
+
+  let valid_operation op desc =
+    SS.mem desc op
+end
 
 module type DESC = sig
   type t
-  val api: description
+  val api: Description.t
 end
 
 module type IMPL = sig
   type t
-  val api: t implementation
+  val api: t Implementation.t
 end
 
 exception Invalid_definition of string
 
 module type S = sig
-  val declare: string list -> description
-  val implement: (string * ('a -> 'a)) list -> 'a implementation
+  val declare: string list -> Description.t
+  val implement: (string * ('a -> 'a)) list -> 'a Implementation.t
 end
 
 module Make = struct
