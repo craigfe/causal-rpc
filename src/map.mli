@@ -28,6 +28,12 @@ module type S = sig
   module Store: Irmin.KV with type contents = Contents.t
   module Sync: Irmin.SYNC with type db = Store.t
 
+  (* -- TESTING PURPOSES --------------------------------- *)
+  val task_queue_is_empty: t -> bool
+  val job_queue_is_empty: t -> bool
+  val generate_task_queue: operation -> t -> 'a contents
+  (* ----------------------------------------------------- *)
+
   (* TODO: make this a more general type *)
   val of_store: Sync.db -> t
   (** Return the map corresponding to an underlying store representation *)

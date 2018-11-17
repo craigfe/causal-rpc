@@ -103,22 +103,23 @@ module Make (Map : Map.S) (Impl: Interface.IMPL with type t = Map.value) = struc
 
         (* Pull and check the map_request file for queued jobs *)
         Sync.pull_exn master upstr `Set
-        >>= fun _ -> Store.find master ["map_request"]
-        >>= fun branch -> match branch with
+        >>= fun _ -> Store.find master ["job_queue"]
+        >>= fun queue -> match queue with
+        | Some Job_queue js -> (match js with
 
-        (* A map request has been issued *)
-        | Some br_name_val ->
+          (* A map request has been issued *)
+          | br_name::_ ->
 
-          (match br_name_val with
-           | Branch_name br_name ->
-             Logs.info (fun m -> m "Detected a map request on branch %s" br_name);
-             handle_request s client br_name
-           | _ -> invalid_arg "Can't happen by design")
+            Logs.info (fun m -> m "Detected a map request on branch %s" br_name);
+            handle_request s client br_name
 
-        | None ->
-          Logs.debug (fun m -> m "Found no map request. Sleeping for %d seconds." poll_frequency);
-          Unix.sleep poll_frequency;
-          Lwt.return_unit
+          | [] ->
+            Logs.debug (fun m -> m "Found no map request. Sleeping for %d seconds." poll_frequency);
+            Unix.sleep poll_frequency;
+            Lwt.return_unit)
+
+        | Some _ -> invalid_arg "Can't happen by design"
+        | None -> invalid_arg "No task queue"
 
       in Lwt_main.run lwt
     done

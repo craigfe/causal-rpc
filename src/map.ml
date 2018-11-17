@@ -57,6 +57,12 @@ module type S = sig
   module Store: Irmin.KV with type contents = Contents.t
   module Sync: Irmin.SYNC with type db = Store.t
 
+  (* Here for testing purposes *)
+  val task_queue_is_empty: t -> bool
+  val job_queue_is_empty: t -> bool
+  val generate_task_queue: operation -> t -> 'a contents
+  (* ------------------------- *)
+
   val of_store: Sync.db -> t
   val empty: ?directory:string -> unit -> t
   val is_empty: t -> bool
@@ -227,24 +233,28 @@ module Make (Val : Irmin.Contents.S) (Desc: Interface.DESC with type t = Val.t) 
       let map_name = "map--" ^ Misc.generate_rand_string ~length:8 () in
       Logs.debug (fun m -> m "Map operation issued. Branch name %s" map_name);
 
-      (* Push a map_request onto the master branch *)
-      Store.set m
-        ~info:(Irmin_unix.info ~author:"map" "Issuing map") ["map_request"] (Branch_name map_name)
+      (* Push the job to the job queue *)
+      push_job map_name m
 
       (* Create a new branch to isolate the operation *)
-      >>= fun _ -> Store.of_branch (Store.repo m) map_name
+      >>= fun _ -> Store.clone ~src:m ~dst:map_name
+      >>= fun branch -> Store.merge_with_branch m ~info:(Irmin_unix.info ~author:"map" "Merged") "master"
+      >|= (fun merge -> match merge with
+      | Ok () -> ()
+      | Error _ -> invalid_arg "merge conflict")
 
       (* Generate and commit the task queue *)
-      >>= fun branch -> Store.set
-        ~info:(Irmin_unix.info ~author:"map" "specifying workload")
-        branch ["task_queue"] (generate_task_queue branch operation)
+      >>= fun () -> set_task_queue (generate_task_queue operation m) branch
 
       (* Wait for the task queue to be empty *)
-      >|= (fun _ -> while not(get_task_queue_empty branch) do Unix.sleep 1 done)
+      >|= (fun _ -> while not(task_queue_is_empty branch) do Unix.sleep 1 done)
 
-      (* TODO: Merge the map branch into master *)
-      >|= fun () -> ()
+      (* Merge the map branch into master *)
+      >>= fun _ -> Store.merge_with_branch m ~info:(Irmin_unix.info ~author: "map" "Job %s complete" map_name) map_name
+      >|= (fun merge -> match merge with
+      | Ok () -> ()
+      | Error _ -> invalid_arg "merge conflict")
+      >>= fun _ -> pop_job m
 
     in Lwt_main.run lwt; m
-
 end

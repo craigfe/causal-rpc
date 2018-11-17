@@ -60,31 +60,60 @@ let test_map () =
 
   end
 
+(** TODO: write tests of the task queuing mechanism *)
+let test_task_queues () =
+
+  let open Intmap in begin
+    let root = "/tmp/irmin/task_queues" in
+
+    IntMap.empty ~directory:(root ^ "test-0001") ()
+    |> IntMap.task_queue_is_empty
+    |> Alcotest.(check bool) "A new repository has an empty task queue" true;
+
+    IntMap.empty ~directory:(root ^ "test-0002") ()
+    |> IntMap.add "a" Int64.one
+    |> IntMap.generate_task_queue "double"
+    |> (fun c -> match c with
+        | Task_queue (s, []) -> Alcotest.(check (list (pair string string)))
+                                  "Task queues are generated in the expected format" ["a", "double"] s
+        | Task_queue (_, _) -> Alcotest.fail "Generated task queue had finished items"
+        | _ -> Alcotest.fail "Generate_task_queue returned a non-task value");
+
+  end
+
 (** Tests of the distributed increment operation on integer maps *)
 let test_increment () =
 
   (* TODO: Start a worker thread, otherwise this stalls indefinitely! *)
 
   let open Intmap in begin
+    Logs.set_reporter (Logs_fmt.reporter ());
+    Logs.set_level (Some Logs.Info);
     let root = "/tmp/irmin/increment/" in
 
     IntMap.empty ~directory:(root ^ "test-0001") ()
-    |> IntMap.add "a" (Int64.of_int 1)
-    |> IntMap.add "b" (Int64.of_int 10)
-    |> IntMap.add "c" (Int64.of_int 100)
-    |> IntMap.map
-    |> IntMap.values
-    |> List.map Int64.to_int
-    |> List.sort compare
-    |> Alcotest.(check (list int)) "The map increment function works as expected" [2; 11; 101];
+    |> IntMap.add "a" Int64.one
+    |> IntMap.map "double"
+    |> IntMap.find "a"
+    |> Alcotest.(check int64) "Issuing a map request populates the task queue" (Int64.of_int 2)
 
+    (* IntMap.empty ~directory:(root ^ "test-0002") ()
+     * |> IntMap.add "a" (Int64.of_int 1)
+     * |> IntMap.add "b" (Int64.of_int 10)
+     * |> IntMap.add "c" (Int64.of_int 100)
+     * |> IntMap.map "double"
+     * |> IntMap.values
+     * |> List.map Int64.to_int
+     * |> List.sort compare
+     * |> Alcotest.(check (list int)) "The map increment function works as expected" [2; 11; 101]; *)
   end
 
 let suite = [
 	"type", [
-	 "base", `Quick, test_base;
-   "map", `Quick, test_map;
-   (* "increment", `Quick, test_increment; *)
+	  "base", `Quick, test_base;
+    "task_queues", `Quick, test_task_queues;
+    "map", `Quick, test_map;
+    "increment", `Quick, test_increment;
 	]
 ]
 
