@@ -37,5 +37,5 @@ module Implementation(I: Interface.S): Interface.IMPL with type t = int64 = stru
 end
 
 module I = Interface.Make
-module IntMap = Map.Make(Int)(Definition(I))
+module IntMap = Map.Make(Int)(Definition(I))(Job_queue.Type)(Job_queue.Make)
 module IntWorker = Worker.Make(IntMap)(Implementation(I))

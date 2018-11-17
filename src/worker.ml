@@ -1,12 +1,12 @@
 open Lwt.Infix
 
 module type W = sig
-  open Map_contents
+  open Map
 
   include Map.S
   val get_task_opt: Sync.db -> Irmin.remote -> task option Lwt.t
   val perform_task: t -> task -> t
-  val handle_request: Store.repo -> string -> string -> unit Lwt.t
+  val handle_request: Store.repo -> string -> JobQueue.job -> unit Lwt.t
 
   val run: ?name:string -> ?dir:string -> client:string -> unit -> unit Lwt.t
 end
@@ -57,6 +57,15 @@ module Make (Map : Map.S) (Impl: Interface.IMPL with type t = Map.value) = struc
     | None -> Lwt.return None (* No task to be performed *)
     | Some _ -> invalid_arg "Can't happen by design"
 
+  (* TODO: do this as part of a transaction *)
+  let remove_pending_task task m =
+    Store.get m ["task_queue"]
+    >|= (fun q -> match q with
+        | Task_queue (todo, pending) ->
+          Trace_rpc.Map.Task_queue (todo, List.filter (fun t -> t <> task) pending)
+        | _ -> invalid_arg "Can't happen by design")
+    >>= Store.set m ~info:(Irmin_unix.info ~author:"map" "Completed task") ["task_queue"]
+
   let perform_task map (key, operation) =
     let old_val = find key map in
     let operation = (match I.find_operation_opt operation Impl.api with
@@ -65,9 +74,10 @@ module Make (Map : Map.S) (Impl: Interface.IMPL with type t = Map.value) = struc
     let new_val = operation old_val in
     add key new_val map
 
-  let handle_request store client br_name =
+  let handle_request store client job =
 
     (* Checkout the branch *)
+    let br_name = JobQueue.Impl.job_to_string job in
     let remote = upstream client br_name in
     Store.of_branch store br_name
     >>= fun local_br -> Sync.pull_exn local_br remote `Set
@@ -75,9 +85,12 @@ module Make (Map : Map.S) (Impl: Interface.IMPL with type t = Map.value) = struc
 
     (* Attempt to take a task from the queue *)
     >>= fun map -> get_task_opt local_br remote
-    >|= (fun task -> match task with
-        | None -> () (* No work to perform. We are done *)
-        | Some t -> ignore (perform_task map t))
+    >>= (fun task -> match task with
+        | None -> Lwt.return_unit (* No work to perform. We are done *)
+        | Some t -> begin
+            ignore (perform_task map t);
+            remove_pending_task t local_br
+          end)
 
     >|= (fun _ -> Logs.info (fun m -> m "Completed operation. Pushing changes to branch %s" br_name))
 
@@ -105,23 +118,19 @@ module Make (Map : Map.S) (Impl: Interface.IMPL with type t = Map.value) = struc
 
         (* Pull and check the map_request file for queued jobs *)
         Sync.pull_exn master upstr `Set
-        >>= fun _ -> Store.find master ["job_queue"]
-        >>= fun queue -> match queue with
-        | Some Job_queue js -> (match js with
+        >>= fun _ -> JobQueue.Impl.peek_opt master
+        >>= fun j -> match j with
 
-          (* A map request has been issued *)
-          | br_name::_ ->
+        (* A map request has been issued *)
+        | Some br_name ->
 
-            Logs.app (fun m -> m "Detected a map request on branch %s" br_name);
-            handle_request s client br_name
+          Logs.app (fun m -> m "Detected a map request on branch %s" (JobQueue.Impl.job_to_string br_name));
+          handle_request s client br_name
 
-          | [] ->
-            Logs.debug (fun m -> m "Found no map request. Sleeping for %d seconds." poll_frequency);
-            Unix.sleep poll_frequency;
-            Lwt.return_unit)
-
-        | Some _ -> invalid_arg "Can't happen by design"
-        | None -> invalid_arg "No task queue"
+        | None ->
+          Logs.debug (fun m -> m "Found no map request. Sleeping for %d seconds." poll_frequency);
+          Unix.sleep poll_frequency;
+          Lwt.return_unit
 
       in Lwt_main.run lwt
     done

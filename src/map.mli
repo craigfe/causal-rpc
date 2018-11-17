@@ -1,12 +1,60 @@
 
-module type S = sig
-  open Map_contents
+exception Empty_queue
 
+(** A task is a key and an operation to perform on the associated binding **)
+type task = string * Interface.Description.op
+
+type ('v, 'jq) contents =
+  | Value of 'v
+  | Task_queue of (task list * task list)
+  | Job_queue of 'jq
+
+module type QUEUE_TYPE = sig
+  type t
+  type job
+
+  val t: t Irmin.Type.t
+  val job: job Irmin.Type.t
+end
+
+module type JOB_QUEUE = sig
+  type t
+  (** The type of job queues *)
+
+  type job
+  (** The type of jobs *)
+
+  module Store: Irmin.KV
+
+  module Type: QUEUE_TYPE
+    with type t = t
+     and type job = job
+
+  module type IMPL = sig
+    val job_of_string: string -> job
+    val job_to_string: job -> string
+
+    val is_empty: Store.t -> bool Lwt.t
+    val push: job -> Store.t -> unit Lwt.t
+    val pop: Store.t -> job Lwt.t
+    val peek_opt: Store.t -> job option Lwt.t
+  end
+
+  module Impl: IMPL
+end
+
+module MakeContents (Val: Irmin.Contents.S) (JQueue: QUEUE_TYPE): Irmin.Contents.S
+  with type t = (Val.t, JQueue.t) contents
+
+module type S = sig
   type key = string
   (** The type of the map keys *)
 
   type value
   (** The type of the map values *)
+
+  type queue
+  (** The type of the job queue *)
 
   type operation = string
   (** The type of operations to be performed on the map *)
@@ -14,17 +62,17 @@ module type S = sig
   type t
   (** The type of maps from type [key] to type [value] *)
 
-  module Contents: Irmin.Contents.S with type t = value contents
+  module Contents: Irmin.Contents.S with type t = (value, queue) contents
   module Store: Irmin.KV with type contents = Contents.t
   module Sync: Irmin.SYNC with type db = Store.t
+  module JobQueue: JOB_QUEUE with module Store = Store
 
   (* -- TESTING PURPOSES --------------------------------- *)
   val task_queue_is_empty: t -> bool
   val job_queue_is_empty: t -> bool
-  val generate_task_queue: operation -> t -> 'a contents
+  val generate_task_queue: operation -> t -> ('a, queue) contents
   (* ----------------------------------------------------- *)
 
-  (* TODO: make this a more general type *)
   val of_store: Sync.db -> t
   (** Return the map corresponding to an underlying store representation *)
 
@@ -65,8 +113,20 @@ module type S = sig
       replaced by the result of applying _a_ function to [a] *)
 end
 
-module Make (Val : Irmin.Contents.S) (Desc: Interface.DESC with type t = Val.t) : S
+module Make
+    (Val : Irmin.Contents.S)
+    (Desc: Interface.DESC with type t = Val.t)
+    (QueueType: QUEUE_TYPE)
+    (JQueueMake: functor
+       (Val: Irmin.Contents.S)
+       (St: Irmin.KV with type contents = (Val.t, QueueType.t) contents)
+       -> (JOB_QUEUE with module Store = St)
+    ): S
   with type value = Val.t
+   and type queue = QueueType.t
    and type operation = Interface.Description.op
-(** Functor building an implementation of the map structure
-    given an equality type and a set of operations on that type. *)
+(** Functor building an implementation of the map structure given:
+     - a value for the map to contain
+     - a set of operations on that type
+     - a queue type
+     - a job queue implementation *)
