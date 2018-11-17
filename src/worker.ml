@@ -112,7 +112,7 @@ module Make (Map : Map.S) (Impl: Interface.IMPL with type t = Map.value) = struc
           (* A map request has been issued *)
           | br_name::_ ->
 
-            Logs.info (fun m -> m "Detected a map request on branch %s" br_name);
+            Logs.app (fun m -> m "Detected a map request on branch %s" br_name);
             handle_request s client br_name
 
           | [] ->

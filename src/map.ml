@@ -159,13 +159,12 @@ module Make (Val : Irmin.Contents.S) (Desc: Interface.DESC with type t = Val.t) 
     Store.set ~info:(Irmin_unix.info ~author:"map" "specifying workload")
       m ["task_queue"] q
 
-
   let map operation m =
     let lwt =
 
       (* TODO: ensure this name doesn't collide with existing branches *)
       let map_name = "map--" ^ Misc.generate_rand_string ~length:8 () in
-      Logs.debug (fun m -> m "Map operation issued. Branch name %s" map_name);
+      Logs.app (fun m -> m "Map operation issued. Branch name %s" map_name);
 
       (* Push the job to the job queue *)
       JobQueue.push map_name m
@@ -189,6 +188,7 @@ module Make (Val : Irmin.Contents.S) (Desc: Interface.DESC with type t = Val.t) 
       | Ok () -> ()
       | Error _ -> invalid_arg "merge conflict")
       >>= fun _ -> JobQueue.pop m
+      >|= fun () -> Logs.app (fun m -> m "Map operation complete. Branch name %s" map_name)
 
     in Lwt_main.run lwt; m
 end

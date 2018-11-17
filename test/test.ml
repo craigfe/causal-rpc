@@ -95,7 +95,7 @@ let test_increment () =
     |> IntMap.add "a" Int64.one
     |> IntMap.map "double"
     |> IntMap.find "a"
-    |> Alcotest.(check int64) "Issuing a map request populates the task queue" (Int64.of_int 2)
+    |> Alcotest.(check int64) "Issuing a double request on a single key" (Int64.of_int 2)
 
     (* IntMap.empty ~directory:(root ^ "test-0002") ()
      * |> IntMap.add "a" (Int64.of_int 1)
