@@ -1,7 +1,4 @@
-(* A task is a key and an operation to perform on the associated binding *)
 type task = string * Interface.Description.op
-
-(* A job is a branch name *)
 type job = string
 
 let job = Irmin.Type.string
