@@ -1,51 +1,7 @@
 open Lwt.Infix
 
-(* A task is a key and an operation to perform on the associated binding *)
-type task = string * string
-
-(* A job is a branch name *)
-type job = string
-
-let job = Irmin.Type.string
-
-let task =
-  let open Irmin.Type in
-  pair string string
-
-type 'v contents =
-  | Value of 'v
-  | Task_queue of (task list * task list)
-  | Job_queue of job list
-
-module MakeContents (Val: Irmin.Contents.S) : Irmin.Contents.S
-  with type t = Val.t contents = struct
-
-  type t = Val.t contents
-
-  let t =
-    let open Irmin.Type in
-    variant "contents" (fun value task_queue branch_name -> function
-        | Value v -> value v
-        | Task_queue q -> task_queue q
-        | Job_queue js -> branch_name js)
-    |~ case1 "Value" Val.t (fun v -> Value v)
-    |~ case1 "Task_queue" (pair (list task) (list task)) (fun q -> Task_queue q)
-    |~ case1 "Job_queue" (list job) (fun js -> Job_queue js)
-    |> sealv
-
-  let pp = Irmin.Type.pp_json t
-
-  let of_string s =
-    let decoder = Jsonm.decoder (`String s) in
-    Irmin.Type.decode_json t decoder
-
-  let merge = Irmin.Merge.(option (idempotent t))
-end
-
-(* Internal errors *)
-exception Empty_queue
-
 module type S = sig
+  open Contents
 
   type key = string
   type value
@@ -77,9 +33,12 @@ module type S = sig
 end
 
 module Make (Val : Irmin.Contents.S) (Desc: Interface.DESC with type t = Val.t) = struct
-  module Contents = MakeContents(Val)
+  open Contents
+
+  module Contents = Contents.MakeContents(Val)
   module Store = Irmin_unix.Git.FS.KV(Contents)
   module Sync = Irmin.Sync(Store)
+  module JobQueue = Job_queue.Make(Val)(Store)
 
   type key = string
   type value = Val.t
@@ -165,13 +124,6 @@ module Make (Val : Irmin.Contents.S) (Desc: Interface.DESC with type t = Val.t) 
         )
     in Lwt_main.run lwt
 
-  let get_job_queue m =
-    Store.find m ["job_queue"]
-    >|= fun q -> match q with
-    | Some Job_queue js -> js
-    | Some _ -> invalid_arg "Can't happen by design"
-    | None -> []
-
   let get_task_queue m =
     Store.find m ["task_queue"]
     >|= fun q -> match q with
@@ -187,15 +139,9 @@ module Make (Val : Irmin.Contents.S) (Desc: Interface.DESC with type t = Val.t) 
       | _ -> false
     in Lwt_main.run lwt
 
-  (* let job_queue_contains elt m =
-   *   let lwt =
-   *     get_job_queue m
-   *     >|= List.exists (String.equal elt)
-   *   in Lwt_main.run lwt *)
-
   let job_queue_is_empty m =
     let lwt =
-      get_job_queue m
+      JobQueue.of_map m
       >|= List.exists (fun _ -> true)
     in Lwt_main.run lwt
 
@@ -213,18 +159,6 @@ module Make (Val : Irmin.Contents.S) (Desc: Interface.DESC with type t = Val.t) 
     Store.set ~info:(Irmin_unix.info ~author:"map" "specifying workload")
       m ["task_queue"] q
 
-  let push_job branch_name m = (* TODO: make this atomic *)
-    get_job_queue m
-    >>= fun js -> Store.set m ~info:(Irmin_unix.info ~author:"map" "Issuing map")
-      ["job_queue"] (Job_queue (branch_name::js))
-
-  (* TODO: make sure the right job is popped *)
-  let pop_job m = (* TODO: make this atomic *)
-    get_job_queue m
-    >>= fun js -> match js with
-    | (_::js) -> Store.set m ~info:(Irmin_unix.info ~author:"map" "Completed map")
-                   ["job_queue"] (Job_queue js)
-    | [] -> raise Empty_queue
 
   let map operation m =
     let lwt =
@@ -234,7 +168,7 @@ module Make (Val : Irmin.Contents.S) (Desc: Interface.DESC with type t = Val.t) 
       Logs.debug (fun m -> m "Map operation issued. Branch name %s" map_name);
 
       (* Push the job to the job queue *)
-      push_job map_name m
+      JobQueue.push map_name m
 
       (* Create a new branch to isolate the operation *)
       >>= fun _ -> Store.clone ~src:m ~dst:map_name
@@ -254,7 +188,7 @@ module Make (Val : Irmin.Contents.S) (Desc: Interface.DESC with type t = Val.t) 
       >|= (fun merge -> match merge with
       | Ok () -> ()
       | Error _ -> invalid_arg "merge conflict")
-      >>= fun _ -> pop_job m
+      >>= fun _ -> JobQueue.pop m
 
     in Lwt_main.run lwt; m
 end

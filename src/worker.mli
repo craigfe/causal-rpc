@@ -1,13 +1,15 @@
 module type W = sig
 
+  open Contents
+
   (* --------------- For testing purposes only --------------- *)
   include Map.S
 
   (** Take a task from the task queue in a store and return it *)
-  val get_task_opt: Sync.db -> Irmin.remote -> Map.task option Lwt.t
+  val get_task_opt: Sync.db -> Irmin.remote -> task option Lwt.t
 
   (** Given a map and a task to be performed on that map *)
-  val perform_task: t -> Map.task -> t
+  val perform_task: t -> task -> t
 
   (** Checkout br_name in store and pull from client, then perform any work still to
       do on that branch *)

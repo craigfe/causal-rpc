@@ -1,16 +1,6 @@
 
-type task = string * string
-type job = string
-
-type 'v contents =
-  | Value of 'v
-  | Task_queue of (task list * task list)
-  | Job_queue of job list
-
-module MakeContents (Val: Irmin.Contents.S) : Irmin.Contents.S
-  with type t = Val.t contents
-
 module type S = sig
+  open Contents
 
   type key = string
   (** The type of the map keys *)

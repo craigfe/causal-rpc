@@ -1,9 +1,11 @@
 open Lwt.Infix
 
 module type W = sig
+  open Contents
+
   include Map.S
-  val get_task_opt: Sync.db -> Irmin.remote -> Map.task option Lwt.t
-  val perform_task: t -> Map.task -> t
+  val get_task_opt: Sync.db -> Irmin.remote -> task option Lwt.t
+  val perform_task: t -> task -> t
   val handle_request: Store.repo -> string -> string -> unit Lwt.t
 
   val run: ?name:string -> ?dir:string -> client:string -> unit -> unit Lwt.t
