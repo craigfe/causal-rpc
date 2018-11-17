@@ -1,7 +1,7 @@
 open Lwt.Infix
 
 module type S = sig
-  open Contents
+  open Map_contents
 
   type key = string
   type value
@@ -33,9 +33,9 @@ module type S = sig
 end
 
 module Make (Val : Irmin.Contents.S) (Desc: Interface.DESC with type t = Val.t) = struct
-  open Contents
+  open Map_contents
 
-  module Contents = Contents.MakeContents(Val)
+  module Contents = Map_contents.Make(Val)
   module Store = Irmin_unix.Git.FS.KV(Contents)
   module Sync = Irmin.Sync(Store)
   module JobQueue = Job_queue.Make(Val)(Store)

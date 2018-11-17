@@ -15,7 +15,7 @@ type 'v contents =
   | Task_queue of (task list * task list)
   | Job_queue of job list
 
-module MakeContents (Val: Irmin.Contents.S) : Irmin.Contents.S
+module Make (Val: Irmin.Contents.S) : Irmin.Contents.S
   with type t = Val.t contents = struct
 
   type t = Val.t contents

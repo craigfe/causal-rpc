@@ -1,6 +1,6 @@
 
 module type S = sig
-  open Contents
+  open Map_contents
 
   type key = string
   (** The type of the map keys *)

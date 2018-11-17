@@ -1,7 +1,7 @@
 open Lwt.Infix
 
 module type W = sig
-  open Contents
+  open Map_contents
 
   include Map.S
   val get_task_opt: Sync.db -> Irmin.remote -> task option Lwt.t

@@ -1,6 +1,5 @@
 module type W = sig
-
-  open Contents
+  open Map_contents
 
   (* --------------- For testing purposes only --------------- *)
   include Map.S
