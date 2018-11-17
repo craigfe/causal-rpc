@@ -3,6 +3,11 @@ open Lwt.Infix
 (* A task is a key and an operation to perform on the associated binding *)
 type task = string * string
 
+(* A job is a branch name *)
+type job = string
+
+let job = Irmin.Type.string
+
 let task =
   let open Irmin.Type in
   pair string string
@@ -10,7 +15,7 @@ let task =
 type 'v contents =
   | Value of 'v
   | Task_queue of (task list * task list)
-  | Branch_name of string
+  | Job_queue of job list
 
 module MakeContents (Val: Irmin.Contents.S) : Irmin.Contents.S
   with type t = Val.t contents = struct
@@ -22,10 +27,10 @@ module MakeContents (Val: Irmin.Contents.S) : Irmin.Contents.S
     variant "contents" (fun value task_queue branch_name -> function
         | Value v -> value v
         | Task_queue q -> task_queue q
-        | Branch_name n -> branch_name n)
+        | Job_queue js -> branch_name js)
     |~ case1 "Value" Val.t (fun v -> Value v)
     |~ case1 "Task_queue" (pair (list task) (list task)) (fun q -> Task_queue q)
-    |~ case1 "Branch_name" string (fun s -> Branch_name s)
+    |~ case1 "Job_queue" (list job) (fun js -> Job_queue js)
     |> sealv
 
   let pp = Irmin.Type.pp_json t
@@ -37,7 +42,11 @@ module MakeContents (Val: Irmin.Contents.S) : Irmin.Contents.S
   let merge = Irmin.Merge.(option (idempotent t))
 end
 
+(* Internal errors *)
+exception Empty_queue
+
 module type S = sig
+
   type key = string
   type value
   type operation = Interface.Description.op
@@ -150,16 +159,41 @@ module Make (Val : Irmin.Contents.S) (Desc: Interface.DESC with type t = Val.t) 
         )
     in Lwt_main.run lwt
 
-  let get_task_queue_empty branch =
+  let get_job_queue m =
+    Store.find m ["job_queue"]
+    >|= fun q -> match q with
+    | Some Job_queue js -> js
+    | Some _ -> invalid_arg "Can't happen by design"
+    | None -> []
+
+  let get_task_queue m =
+    Store.find m ["task_queue"]
+    >|= fun q -> match q with
+    | Some Task_queue tq -> tq
+    | Some _ -> invalid_arg "Can't happen by design"
+    | None -> ([], [])
+
+  let task_queue_is_empty branch =
     let lwt =
-      Store.get branch ["task_queue"]
+      get_task_queue branch
       >|= fun q -> match q with
-      | Task_queue ([], []) -> true
-      | Task_queue _ -> false
-      | _ -> invalid_arg "Can't happen by design"
+      | ([], []) -> true
+      | _ -> false
     in Lwt_main.run lwt
 
-  let generate_task_queue map operation =
+  (* let job_queue_contains elt m =
+   *   let lwt =
+   *     get_job_queue m
+   *     >|= List.exists (String.equal elt)
+   *   in Lwt_main.run lwt *)
+
+  let job_queue_is_empty m =
+    let lwt =
+      get_job_queue m
+      >|= List.exists (fun _ -> true)
+    in Lwt_main.run lwt
+
+  let generate_task_queue operation map =
     keys map
     |> List.map (fun v -> (v, operation))
     |> (fun ops ->
@@ -169,6 +203,22 @@ module Make (Val : Irmin.Contents.S) (Desc: Interface.DESC with type t = Val.t) 
          ops)
     |> fun ops -> Task_queue (ops, []) (* Initially there are no pending operations *)
 
+  let set_task_queue q m =
+    Store.set ~info:(Irmin_unix.info ~author:"map" "specifying workload")
+      m ["task_queue"] q
+
+  let push_job branch_name m = (* TODO: make this atomic *)
+    get_job_queue m
+    >>= fun js -> Store.set m ~info:(Irmin_unix.info ~author:"map" "Issuing map")
+      ["job_queue"] (Job_queue (branch_name::js))
+
+  (* TODO: make sure the right job is popped *)
+  let pop_job m = (* TODO: make this atomic *)
+    get_job_queue m
+    >>= fun js -> match js with
+    | (_::js) -> Store.set m ~info:(Irmin_unix.info ~author:"map" "Completed map")
+                   ["job_queue"] (Job_queue js)
+    | [] -> raise Empty_queue
 
   let map operation m =
     let lwt =

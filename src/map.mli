@@ -1,14 +1,17 @@
 
 type task = string * string
+type job = string
+
 type 'v contents =
   | Value of 'v
   | Task_queue of (task list * task list)
-  | Branch_name of string
+  | Job_queue of job list
 
 module MakeContents (Val: Irmin.Contents.S) : Irmin.Contents.S
   with type t = Val.t contents
 
 module type S = sig
+
   type key = string
   (** The type of the map keys *)
 
