@@ -11,8 +11,8 @@ module type W = sig
   val run: ?name:string -> ?dir:string -> client:string -> unit -> unit Lwt.t
 end
 
-module Make (Map : Map.S) (Impl: Interface.IMPL with type t = Map.value) = struct
-  include Map
+module Make (M : Map.S) (Impl: Interface.IMPL with type t = M.value) = struct
+  include M
 
   module I = Interface.Implementation
 
@@ -49,7 +49,10 @@ module Make (Map : Map.S) (Impl: Interface.IMPL with type t = Map.value) = struc
     Store.find local_br ["task_queue"]
     >>= fun q -> match q with
     | Some Task_queue ((x::xs), pending) ->
-      Store.set local_br ~info:(Irmin_unix.info ~author:"map" "Consuming task") ["task_queue"] (Task_queue (xs, x::pending))
+      Store.set local_br
+        ~info:(Irmin_unix.info ~author:"map" "Consuming task")
+        ["task_queue"]
+        (Task_queue (xs, x::pending))
       >>= fun () -> Sync.push_exn local_br remote
       >|= fun () -> Some x
 
@@ -61,8 +64,7 @@ module Make (Map : Map.S) (Impl: Interface.IMPL with type t = Map.value) = struc
   let remove_pending_task task m =
     Store.get m ["task_queue"]
     >|= (fun q -> match q with
-        | Task_queue (todo, pending) ->
-          Trace_rpc.Map.Task_queue (todo, List.filter (fun t -> t <> task) pending)
+        | Task_queue (todo, pending) -> Map.Task_queue (todo, List.filter (fun t -> t <> task) pending)
         | _ -> invalid_arg "Can't happen by design")
     >>= Store.set m ~info:(Irmin_unix.info ~author:"map" "Completed task") ["task_queue"]
 
@@ -81,7 +83,7 @@ module Make (Map : Map.S) (Impl: Interface.IMPL with type t = Map.value) = struc
     let remote = upstream client br_name in
     Store.of_branch store br_name
     >>= fun local_br -> Sync.pull_exn local_br remote `Set
-    >|= (fun () -> Map.of_store local_br)
+    >|= (fun () -> M.of_store local_br)
 
     (* Attempt to take a task from the queue *)
     >>= fun map -> get_task_opt local_br remote

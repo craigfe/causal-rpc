@@ -37,7 +37,7 @@ module Make
     let of_map m =
       Store.find m ["job_queue"]
       >|= fun q -> match q with
-      | Some Trace_rpc.Map.Job_queue js -> js
+      | Some Map.Job_queue js -> js
       | Some _ -> invalid_arg "Can't happen by design"
       | None -> []
 
