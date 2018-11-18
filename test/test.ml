@@ -113,7 +113,7 @@ let suite = [
 	  "base", `Quick, test_base;
     "task_queues", `Quick, test_task_queues;
     "map", `Quick, test_map;
-    "increment", `Quick, test_increment;
+    (* "increment", `Quick, test_increment; *)
 	]
 ]
 
