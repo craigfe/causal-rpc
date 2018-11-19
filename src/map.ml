@@ -2,9 +2,19 @@ open Lwt.Infix
 
 exception Empty_queue
 
-type task = string * Interface.Description.op
-let task = let open Irmin.Type in
-  pair string string
+type task = {
+  name: Interface.op;
+  params: Interface.param list;
+  key: string;
+}
+
+let task =
+  let open Irmin.Type in
+  record "task" (fun name params key -> { name; params; key })
+  |+ field "name" Interface.op (fun t -> t.name)
+  |+ field "params" (list Interface.param) (fun t -> t.params)
+  |+ field "key" string (fun t -> t.key)
+  |> sealr
 
 type ('v, 'jq) contents =
   | Value of 'v
@@ -70,12 +80,14 @@ module MakeContents (Val: Irmin.Contents.S) (JQueueType: QUEUE_TYPE): Irmin.Cont
   let merge = Irmin.Merge.(option (idempotent t))
 end
 
+exception Malformed_params of string
 module type S = sig
 
   type key = string
   type value
   type queue
-  type operation = Interface.Description.op
+  type operation = Interface.op
+  type param = Interface.param
 
   type t
 
@@ -87,7 +99,7 @@ module type S = sig
   (* Here for testing purposes *)
   val task_queue_is_empty: t -> bool
   val job_queue_is_empty: t -> bool
-  val generate_task_queue: operation -> t -> ('a, queue) contents
+  val generate_task_queue: operation -> param list -> t -> ('a, 'b) contents
   (* ------------------------- *)
 
   val of_store: Sync.db -> t
@@ -100,7 +112,7 @@ module type S = sig
   val size: t -> int
   val keys: t -> key list
   val values: t -> value list
-  val map: operation -> t -> t
+  val map: operation -> param list -> t -> t
 end
 
 module Make
@@ -121,7 +133,8 @@ module Make
   type key = string
   type value = Val.t
   type queue = QueueType.t
-  type operation = Interface.Description.op
+  type operation = Interface.op
+  type param = Interface.param
 
   type t = Sync.db
   (* A map is a branch in an Irmin Key-value store *)
@@ -221,21 +234,32 @@ module Make
   let job_queue_is_empty m =
     Lwt_main.run (JobQueue.Impl.is_empty m)
 
-  let generate_task_queue operation map =
-    keys map
-    |> List.map (fun v -> (v, operation))
-    |> (fun ops ->
-        Logs.warn (fun m -> m "Generated task queue of [%s]"
-                      (List.map (fun (a, b) -> Printf.sprintf "(%s, %s)" a b) ops
-                       |> String.concat ", "));
-         ops)
-    |> fun ops -> Task_queue (ops, []) (* Initially there are no pending operations *)
+  let generate_task_queue operation params map =
+    let (name, count) = operation in
+    let expected_param_count = Int32.to_int count in
+    let true_param_count = List.length params in
+
+    if true_param_count != expected_param_count then
+      Printf.sprintf "Expected %d arguments but received %d for operation %s"
+        expected_param_count true_param_count name
+      |> fun m -> raise (Malformed_params m)
+
+    else
+      keys map
+      |> List.map (fun key -> {name=operation; params; key})
+      |> (fun ops ->
+          Logs.warn (fun m -> m "Generated task queue of [%s]"
+                        (List.map (fun {name = n; params = _; key = k} ->
+                             Printf.sprintf "{name: %s; key %s}" (fst n) k) ops
+                         |> String.concat ", "));
+          ops)
+      |> fun ops -> Task_queue (ops, []) (* Initially there are no pending operations *)
 
   let set_task_queue q m =
     Store.set ~info:(Irmin_unix.info ~author:"map" "specifying workload")
       m ["task_queue"] q
 
-  let map operation m =
+  let map operation params m =
     let lwt =
 
       (* TODO: ensure this name doesn't collide with existing branches *)
@@ -247,19 +271,21 @@ module Make
 
       (* Create a new branch to isolate the operation *)
       >>= fun _ -> Store.clone ~src:m ~dst:map_name
-      >>= fun branch -> Store.merge_with_branch m ~info:(Irmin_unix.info ~author:"map" "Merged") "master"
+      >>= fun branch -> Store.merge_with_branch m
+        ~info:(Irmin_unix.info ~author:"map" "Merged") "master"
       >|= (fun merge -> match merge with
       | Ok () -> ()
       | Error _ -> invalid_arg "merge conflict")
 
       (* Generate and commit the task queue *)
-      >>= fun () -> set_task_queue (generate_task_queue operation m) branch
+      >>= fun () -> set_task_queue (generate_task_queue operation params m) branch
 
       (* Wait for the task queue to be empty *)
       >|= (fun _ -> while not(task_queue_is_empty branch) do Unix.sleep 1 done)
 
       (* Merge the map branch into master *)
-      >>= fun _ -> Store.merge_with_branch m ~info:(Irmin_unix.info ~author: "map" "Job %s complete" map_name) map_name
+      >>= fun _ -> Store.merge_with_branch m
+        ~info:(Irmin_unix.info ~author: "map" "Job %s complete" map_name) map_name
       >|= (fun merge -> match merge with
       | Ok () -> ()
       | Error _ -> invalid_arg "merge conflict")

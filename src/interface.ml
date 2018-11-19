@@ -1,10 +1,21 @@
-module SS = Set.Make(String)
+type op = string * int32
+let op = let open Irmin.Type in pair string int32
+
+type param = string
+let param = Irmin.Type.string
+
+module Operation: Set.OrderedType with type t = op = struct
+  type t = op
+  let compare (a, _) (b, _) = String.compare a b
+end
+module OpSet = Set.Make(Operation)
 
 module Implementation = struct
   type operation_key = string
 
-  (* An implementation is a map from function names to type-preserving functions *)
-  type 'a t = (string, ('a -> 'a)) Hashtbl.t
+  (* An implementation is a map from operations to type-preserving functions
+     with string parameters *)
+  type 'a t = (op, (param list -> 'a -> 'a)) Hashtbl.t
 
   let of_hashtable i = i
 
@@ -13,15 +24,14 @@ module Implementation = struct
 end
 
 module Description = struct
-  type op = string
 
-  (* A description is a set of function names *)
-  type t = SS.t
+  (* A description is a set of operations *)
+  type t = OpSet.t
 
   let of_set s = s
 
-  let valid_operation op desc =
-    SS.mem desc op
+  let valid_name name d =
+    OpSet.exists (fun (n, _) -> name == n) d
 end
 
 module type DESC = sig
@@ -37,19 +47,22 @@ end
 exception Invalid_definition of string
 
 module type S = sig
-  val declare: string list -> Description.t
-  val implement: (string * ('a -> 'a)) list -> 'a Implementation.t
+  val declare: string -> int32 -> op
+  val describe: op list -> Description.t
+  val implement: (op * (param list -> 'a -> 'a)) list -> 'a Implementation.t
 end
 
 module Make = struct
 
+  let declare string opt = (string, opt)
+
   (* Simply convert the list to a set, return an exception if the list
      contains a duplicate *)
-  let declare fns =
+  let describe fns =
     let len = List.length fns in
-    let set = SS.of_list fns in
+    let set = OpSet.of_list fns in
 
-    if (SS.cardinal set != len) then
+    if (OpSet.cardinal set != len) then
       raise @@ Invalid_definition "Duplicate function name contained in list"
     else set
 
@@ -59,9 +72,9 @@ module Make = struct
     let h = Hashtbl.create 10 in
     let rec aux fns = match fns with
       | [] -> h
-      | (name, f)::fs -> match Hashtbl.find_opt h name with
-        | Some _ -> raise @@ Invalid_definition ("Duplicate function name (" ^ name ^ ") in implementation")
-        | None -> Hashtbl.add h name f; aux fs
+      | (op, f)::fs -> match Hashtbl.find_opt h op with
+        | Some _ -> raise @@ Invalid_definition ("Duplicate function name (" ^ (fst op) ^ ") in implementation")
+        | None -> Hashtbl.add h op f; aux fs
     in Implementation.of_hashtable (aux fns)
 
 end

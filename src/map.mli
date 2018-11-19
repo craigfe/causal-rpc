@@ -1,8 +1,13 @@
 
 exception Empty_queue
 
-(** A task is a key and an operation to perform on the associated binding **)
-type task = string * Interface.Description.op
+(** A task is an operation, a list of parameters and a key specifying the value
+    on which to perform the operation *)
+type task = {
+  name: Interface.op;
+  params: Interface.param list;
+  key: string;
+}
 
 type ('v, 'jq) contents =
   | Value of 'v
@@ -46,6 +51,7 @@ end
 module MakeContents (Val: Irmin.Contents.S) (JQueue: QUEUE_TYPE): Irmin.Contents.S
   with type t = (Val.t, JQueue.t) contents
 
+exception Malformed_params of string
 module type S = sig
   type key = string
   (** The type of the map keys *)
@@ -56,8 +62,11 @@ module type S = sig
   type queue
   (** The type of the job queue *)
 
-  type operation = string
+  type operation = Interface.op
   (** The type of operations to be performed on the map *)
+
+  type param = Interface.param
+  (** The type of parameters to supply to map operations *)
 
   type t
   (** The type of maps from type [key] to type [value] *)
@@ -70,7 +79,7 @@ module type S = sig
   (* -- TESTING PURPOSES --------------------------------- *)
   val task_queue_is_empty: t -> bool
   val job_queue_is_empty: t -> bool
-  val generate_task_queue: operation -> t -> ('a, queue) contents
+  val generate_task_queue: operation -> param list -> t -> ('a, 'b) contents
   (* ----------------------------------------------------- *)
 
   val of_store: Sync.db -> t
@@ -107,7 +116,7 @@ module type S = sig
   val values: t -> value list
   (** Return a list of values in the map *)
 
-  val map: operation -> t -> t
+  val map: operation -> Interface.param list -> t -> t
   (** [map m] returns a map with the same domain as [m] in which
       the associated value [a] of all bindings of [m] have been
       replaced by the result of applying _a_ function to [a] *)
@@ -124,7 +133,7 @@ module Make
     ): S
   with type value = Val.t
    and type queue = QueueType.t
-   and type operation = Interface.Description.op
+   and type operation = Interface.op
 (** Functor building an implementation of the map structure given:
      - a value for the map to contain
      - a set of operations on that type

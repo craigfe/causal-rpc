@@ -68,13 +68,13 @@ module Make (M : Map.S) (Impl: Interface.IMPL with type t = M.value) = struct
         | _ -> invalid_arg "Can't happen by design")
     >>= Store.set m ~info:(Irmin_unix.info ~author:"map" "Completed task") ["task_queue"]
 
-  let perform_task map (key, operation) =
-    let old_val = find key map in
-    let operation = (match I.find_operation_opt operation Impl.api with
+  let perform_task map (task:Map.task) =
+    let old_val = find task.key map in
+    let operation = (match I.find_operation_opt task.name Impl.api with
       | Some operation -> operation
       | None -> invalid_arg "Operation not found") in
-    let new_val = operation old_val in
-    add key new_val map
+    let new_val = operation task.params old_val in
+    add task.key new_val map
 
   let handle_request store client job =
 

@@ -23,7 +23,10 @@ module Definition(I: Interface.S): Interface.DESC with type t = int64 = struct
   open I
   type t = int64
 
-  let api = declare ["increment"; "double"]
+  let api = describe [
+      declare "increment" Int32.zero;
+      declare "double" Int32.zero
+    ]
 end
 
 module Implementation(I: Interface.S): Interface.IMPL with type t = int64 = struct
@@ -33,7 +36,10 @@ module Implementation(I: Interface.S): Interface.IMPL with type t = int64 = stru
   let increment = Int64.add Int64.one
   let double = Int64.mul (Int64.of_int 2)
 
-  let api = implement [("increment", increment); ("double", double)]
+  let api = implement [
+      (declare "increment" Int32.zero, fun _ -> increment);
+      (declare "double"    Int32.zero, fun _ -> double)
+    ]
 end
 
 module I = Interface.Make
