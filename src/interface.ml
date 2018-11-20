@@ -1,7 +1,9 @@
 
-type param = string
-let param = Irmin.Type.string
-
+module Param = struct
+  type t = string
+  let t = Irmin.Type.string
+  let test_t = Alcotest.string
+end
 
 module Operation = struct
   type t = string * int32
@@ -44,7 +46,7 @@ module Implementation = struct
 
   (* An implementation is a map from operations to type-preserving functions
      with string parameters *)
-  type 'a t = (Operation.t, (param list -> 'a -> 'a)) Hashtbl.t
+  type 'a t = (Operation.t, (Param.t list -> 'a -> 'a)) Hashtbl.t
 
   (* Simply convert the list to a hashtable, return an exception if there
      are any duplicate function names *)

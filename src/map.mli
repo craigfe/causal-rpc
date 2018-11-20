@@ -5,7 +5,7 @@ exception Empty_queue
     on which to perform the operation *)
 type task = {
   name: Interface.Operation.t;
-  params: Interface.param list;
+  params: Interface.Param.t list;
   key: string;
 }
 
@@ -65,7 +65,7 @@ module type S = sig
   type operation = Interface.Operation.t
   (** The type of operations to be performed on the map *)
 
-  type param = Interface.param
+  type param = Interface.Param.t
   (** The type of parameters to supply to map operations *)
 
   type t
@@ -116,7 +116,7 @@ module type S = sig
   val values: t -> value list
   (** Return a list of values in the map *)
 
-  val map: operation -> Interface.param list -> t -> t
+  val map: operation -> Interface.Param.t list -> t -> t
   (** [map m] returns a map with the same domain as [m] in which
       the associated value [a] of all bindings of [m] have been
       replaced by the result of applying _a_ function to [a] *)

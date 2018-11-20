@@ -4,7 +4,7 @@ exception Empty_queue
 
 type task = {
   name: Interface.Operation.t;
-  params: Interface.param list;
+  params: Interface.Param.t list;
   key: string;
 }
 
@@ -12,7 +12,7 @@ let task =
   let open Irmin.Type in
   record "task" (fun name params key -> { name; params; key })
   |+ field "name" Interface.Operation.t (fun t -> t.name)
-  |+ field "params" (list Interface.param) (fun t -> t.params)
+  |+ field "params" (list Interface.Param.t) (fun t -> t.params)
   |+ field "key" string (fun t -> t.key)
   |> sealr
 
@@ -87,7 +87,7 @@ module type S = sig
   type value
   type queue
   type operation = Interface.Operation.t
-  type param = Interface.param
+  type param = Interface.Param.t
 
   type t
 
@@ -134,7 +134,7 @@ module Make
   type value = Val.t
   type queue = QueueType.t
   type operation = Interface.Operation.t
-  type param = Interface.param
+  type param = Interface.Param.t
 
   type t = Sync.db
   (* A map is a branch in an Irmin Key-value store *)

@@ -1,6 +1,12 @@
-type param = string
+module Param : sig
+  type t
+  (** The type of parameters *)
 
-val param: param Irmin.Type.t
+  val t: t Irmin.Type.t
+  (** Irmin type for operations *)
+
+  val test_t: t Alcotest.testable
+end
 
 module Operation : sig
 
@@ -45,12 +51,12 @@ module Implementation : sig
   (** The type of implementations of functions from type 'a to 'a *)
   type 'a t
 
-  val implement: (Operation.t * (param list -> 'a -> 'a)) list -> 'a t
+  val implement: (Operation.t * (Param.t list -> 'a -> 'a)) list -> 'a t
   (** Construct an RPC implementation from a list of pairs of operations and
       implementations of those operations *)
 
   (** Retreive an operation from an implementation *)
-  val find_operation_opt: Operation.t -> 'a t -> (param list -> 'a -> 'a) option
+  val find_operation_opt: Operation.t -> 'a t -> (Param.t list -> 'a -> 'a) option
 end
 
 module type DESC = sig
