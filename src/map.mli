@@ -4,7 +4,7 @@ exception Empty_queue
 (** A task is an operation, a list of parameters and a key specifying the value
     on which to perform the operation *)
 type task = {
-  name: Interface.op;
+  name: Interface.Operation.t;
   params: Interface.param list;
   key: string;
 }
@@ -62,7 +62,7 @@ module type S = sig
   type queue
   (** The type of the job queue *)
 
-  type operation = Interface.op
+  type operation = Interface.Operation.t
   (** The type of operations to be performed on the map *)
 
   type param = Interface.param
@@ -133,7 +133,7 @@ module Make
     ): S
   with type value = Val.t
    and type queue = QueueType.t
-   and type operation = Interface.op
+   and type operation = Interface.Operation.t
 (** Functor building an implementation of the map structure given:
      - a value for the map to contain
      - a set of operations on that type

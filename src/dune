@@ -2,6 +2,7 @@
 	(name trace_rpc)
 	(public_name trace_rpc)
 	(libraries
+    alcotest
 		cmdliner
 		fmt.cli
 		fmt.tty

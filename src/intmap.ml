@@ -19,29 +19,31 @@ module Int: Irmin.Contents.S with type t = int64 = struct
     let merge = Irmin.Merge.(option (v t merge))
 end
 
-module Definition(I: Interface.S): Interface.DESC with type t = int64 = struct
-  open I
+open Interface.Operation
+let double_op = declare "double" 0
+let increment_op = declare "increment" 0
+
+module Definition: Interface.DESC with type t = int64 = struct
+  open Interface.Description
+
   type t = int64
 
-  let api = describe [
-      declare "increment" Int32.zero;
-      declare "double" Int32.zero
-    ]
+  let api = define [ double_op; increment_op ]
 end
 
-module Implementation(I: Interface.S): Interface.IMPL with type t = int64 = struct
-  open I
+module Implementation: Interface.IMPL with type t = int64 = struct
+  open Interface.Implementation
+
   type t = int64
 
   let increment = Int64.add Int64.one
   let double = Int64.mul (Int64.of_int 2)
 
   let api = implement [
-      (declare "increment" Int32.zero, fun _ -> increment);
-      (declare "double"    Int32.zero, fun _ -> double)
+      (increment_op, fun _ -> increment);
+      (double_op, fun _ -> double)
     ]
 end
 
-module I = Interface.Make
-module IntMap = Map.Make(Int)(Definition(I))(Job_queue.Type)(Job_queue.Make)
-module IntWorker = Worker.Make(IntMap)(Implementation(I))
+module IntMap = Map.Make(Int)(Definition)(Job_queue.Type)(Job_queue.Make)
+module IntWorker = Worker.Make(IntMap)(Implementation)

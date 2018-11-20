@@ -1,61 +1,64 @@
-type op = string * int32
 type param = string
 
-val op: op Irmin.Type.t
 val param: param Irmin.Type.t
 
-module Operation: Set.OrderedType with type t = op
+module Operation : sig
 
-(** A set of RPC implementations indexed by string names *)
+  type t
+  (** The type of operations *)
+
+  val t: t Irmin.Type.t
+  (** Irmin type for operations *)
+
+  val test_t: t Alcotest.testable
+
+  val name: t -> string
+  (** Return the name of an operation *)
+
+  val arity: t -> int
+  (** Return the number of arguments an operation takes *)
+
+  val declare: string -> int -> t
+  (** Declare a function with a name and a number of arguments *)
+end
+
+(** Returned if a description or an implementation cannot be created *)
+exception Invalid_description of string
+
+(** A set of RPC operations *)
+module Description : sig
+
+  type 'a t
+  (** The type of descriptions *)
+
+  val define: Operation.t list -> 'a t
+  (** Construct an RPC interface description from a list of declared functions *)
+
+  val valid_name: string -> 'a t -> bool
+  (** Test whether or not an operation is contained in the description *)
+end
+
+
 module Implementation : sig
   type operation_key = string
 
   (** The type of implementations of functions from type 'a to 'a *)
   type 'a t
 
-  (** Generate an implementation from a hashtable *)
-  val of_hashtable: (op, (param list -> 'a -> 'a)) Hashtbl.t -> 'a t
+  val implement: (Operation.t * (param list -> 'a -> 'a)) list -> 'a t
+  (** Construct an RPC implementation from a list of pairs of operations and
+      implementations of those operations *)
 
   (** Retreive an operation from an implementation *)
-  val find_operation_opt: op -> 'a t -> (param list -> 'a -> 'a) option
-end
-
-(** A set of RPC operations *)
-module Description : sig
-
-  type t
-  (** The type of descriptions *)
-
-  (** Generate a description from a set *)
-  val of_set: Set.Make(Operation).t -> t
-
-  (** Test whether or not an operation is contained in the description *)
-  val valid_name: string -> t -> bool
+  val find_operation_opt: Operation.t -> 'a t -> (param list -> 'a -> 'a) option
 end
 
 module type DESC = sig
   type t
-  val api: Description.t
+  val api: t Description.t
 end
 
 module type IMPL = sig
   type t
   val api: t Implementation.t
 end
-
-exception Invalid_definition of string
-
-module type S = sig
-  val declare: string -> int32 -> op
-  (** Declare a function with a name and a number of arguments *)
-
-  val describe: op list -> Description.t
-  (** Construct an RPC interface description from a list of declared functions *)
-
-  val implement: (op * (param list -> 'a -> 'a)) list -> 'a Implementation.t
-  (** Construct an RPC implementation from a list of pairs of operations and
-      implementations of those operations *)
-end
-
-module Make: S
-

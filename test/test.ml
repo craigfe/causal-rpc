@@ -65,6 +65,7 @@ let test_task_queues () =
 
   let open Intmap in begin
     let root = "/tmp/irmin/task_queues/" in
+    let operation = Interface.Operation.declare "double" 0 in
 
     IntMap.empty ~directory:(root ^ "test-0001") ()
     |> IntMap.task_queue_is_empty
@@ -72,17 +73,18 @@ let test_task_queues () =
 
     IntMap.empty ~directory:(root ^ "test-0002") ()
     |> IntMap.add "a" Int64.one
-    |> IntMap.generate_task_queue ("double", Int32.zero) []
+    |> IntMap.generate_task_queue operation [] (* TODO: It shouldn't be necessary to pass the empty list here *)
+
     |> (fun c -> match c with
         | Task_queue (s, []) ->
           (* Mangle the record into nested pairs so that alcotest can check equality *)
           List.map (fun ({name;params;key}:Map.task) -> (name, (params, key))) s
           |> Alcotest.(check (list (pair
-                                  (pair string int32)
+                                  (Interface.Operation.test_t)
                                   (pair (list string) string)
                                )))
             "Task queues are generated in the expected format"
-            [(("double", Int32.zero), ([],"a"))]
+            [operation, ([],"a")]
         | Task_queue (_, _) -> Alcotest.fail "Generated task queue had finished items"
         | _ -> Alcotest.fail "Generate_task_queue returned a non-task value");
 
@@ -100,7 +102,8 @@ let test_increment () =
 
     IntMap.empty ~directory:(root ^ "test-0001") ()
     |> IntMap.add "a" Int64.one
-    |> IntMap.map ("double", Int32.zero) [] (* TODO: It shouldn't be necessary to pass the param count here *)
+    |> (let operation = Interface.Operation.declare "double" 0 in
+    IntMap.map operation []) (* TODO: It shouldn't be necessary to pass the empty array here *)
     |> IntMap.find "a"
     |> Alcotest.(check int64) "Issuing a double request on a single key" (Int64.of_int 2)
 

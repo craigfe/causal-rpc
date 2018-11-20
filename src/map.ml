@@ -3,7 +3,7 @@ open Lwt.Infix
 exception Empty_queue
 
 type task = {
-  name: Interface.op;
+  name: Interface.Operation.t;
   params: Interface.param list;
   key: string;
 }
@@ -11,7 +11,7 @@ type task = {
 let task =
   let open Irmin.Type in
   record "task" (fun name params key -> { name; params; key })
-  |+ field "name" Interface.op (fun t -> t.name)
+  |+ field "name" Interface.Operation.t (fun t -> t.name)
   |+ field "params" (list Interface.param) (fun t -> t.params)
   |+ field "key" string (fun t -> t.key)
   |> sealr
@@ -86,7 +86,7 @@ module type S = sig
   type key = string
   type value
   type queue
-  type operation = Interface.op
+  type operation = Interface.Operation.t
   type param = Interface.param
 
   type t
@@ -133,7 +133,7 @@ module Make
   type key = string
   type value = Val.t
   type queue = QueueType.t
-  type operation = Interface.op
+  type operation = Interface.Operation.t
   type param = Interface.param
 
   type t = Sync.db
@@ -235,8 +235,9 @@ module Make
     Lwt_main.run (JobQueue.Impl.is_empty m)
 
   let generate_task_queue operation params map =
-    let (name, count) = operation in
-    let expected_param_count = Int32.to_int count in
+    let open Interface in
+    let name = Operation.name operation in
+    let expected_param_count = Operation.arity operation in
     let true_param_count = List.length params in
 
     if true_param_count != expected_param_count then
@@ -250,7 +251,7 @@ module Make
       |> (fun ops ->
           Logs.warn (fun m -> m "Generated task queue of [%s]"
                         (List.map (fun {name = n; params = _; key = k} ->
-                             Printf.sprintf "{name: %s; key %s}" (fst n) k) ops
+                             Printf.sprintf "{name: %s; key %s}" (Operation.name n) k) ops
                          |> String.concat ", "));
           ops)
       |> fun ops -> Task_queue (ops, []) (* Initially there are no pending operations *)
