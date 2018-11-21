@@ -34,14 +34,49 @@ type (_,_) func =
   | Base : ('a -> 'a) -> ('a, 'a -> 'a) func
   | Param : (Param.t -> ('a, 'b) func) -> ('a, (Param.t -> 'b)) func
 
-  let test_t = Alcotest.(pair string int32)
+module type OPERATION = sig
+  type value
+  type 'a unboxed
+  type t = | B: 'a unboxed -> t
+  type 'a matched_implementation = 'a unboxed * 'a
+  type boxed_mi = | E: 'a matched_implementation -> boxed_mi
+  val name: 'a unboxed -> string
+  val typ:  'a unboxed -> (value, 'a) func_type
 
-  let name (n, _) = n
-  let arity (_, a) = Int32.to_int a
+  val return: ('a, 'a -> 'a) func_type
+  val (-->): unit -> ('a, 'b) func_type -> ('a, Param.t -> 'b) func_type
+  val declare: string -> (value, 'b) func_type -> 'b unboxed
 
-  let declare name arity = (name, Int32.of_int arity)
-  let compare (a, _) (b, _) = String.compare a b
+  val compare: t -> t -> int
 end
+
+module Operation(T: Irmin.Contents.S): OPERATION with type value = T.t = struct
+  type value = T.t
+
+  type 'a unboxed = {
+    name: string;
+    typ: (value, 'a) func_type;
+  }
+  (* An operation is a function with a string name *)
+
+  type t = | B: 'a unboxed -> t
+  type 'a matched_implementation = 'a unboxed * 'a
+  type boxed_mi = | E: 'a matched_implementation -> boxed_mi
+
+  let name {name = n; _} = n
+  let typ {name = _; typ = t} = t
+
+  let return = BaseType
+  let (-->) p f = ParamType (p, f)
+
+  let declare name typ = {name; typ}
+
+  let compare a b =
+    match a with
+    | B {name = n1; _} -> match b with
+      | B {name = n2; _} -> String.compare n1 n2
+end
+
 
 exception Invalid_description of string
 module Description = struct
