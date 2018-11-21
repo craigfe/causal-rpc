@@ -61,5 +61,10 @@ module Implementation: Interface.IMPL with type S.t = int64 = struct
     ]
 end
 
-module IntMap = Map.Make(Definition)(Job_queue.Type)(Job_queue.Make)
+module IntMap = Map.Make
+    (Definition)
+    (Irmin_unix.Git.FS.KV)
+    (Job_queue.Type)
+    (Job_queue.Make)
+
 module IntWorker = Worker.Make(IntMap)(Implementation)

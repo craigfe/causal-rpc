@@ -120,6 +120,7 @@ end
 
 module Make
     (Desc: Interface.DESC)
+    (Kv_maker: Irmin_git.KV_MAKER)
     (QueueType: QUEUE_TYPE)
     (JQueueMake: functor
        (Val: Irmin.Contents.S)
@@ -129,7 +130,7 @@ module Make
 
   module Value = Desc.S
   module Contents = MakeContents(Desc.S)(QueueType)
-  module Store = Irmin_unix.Git.FS.KV(Contents)
+  module Store = Kv_maker(Contents)
   module Sync = Irmin.Sync(Store)
   module JobQueue = JQueueMake(Desc.S)(Store)
   module Operation = Interface.Operation(Value)

@@ -125,6 +125,7 @@ end
 
 module Make
     (Desc: Interface.DESC)
+    (Kv_maker: Irmin_git.KV_MAKER)
     (QueueType: QUEUE_TYPE)
     (JQueueMake: functor
        (Val: Irmin.Contents.S)
