@@ -1,4 +1,3 @@
-
 module Param = struct
   type t =
     | Unit of unit
@@ -79,12 +78,15 @@ end
 
 
 exception Invalid_description of string
-module Description = struct
+module Description(T: Irmin.Contents.S) = struct
 
-  module OpSet = Set.Make(Operation)
+  module O = Operation(T)
+  module OpSet = Set.Make(O)
 
   (* A description is a set of operations *)
-  type 'a t = OpSet.t
+  type t = OpSet.t
+
+  let describe unboxed = O.B unboxed
 
   (* Simply convert the list to a set, return an exception if the list
      contains a duplicate *)
@@ -97,26 +99,37 @@ module Description = struct
     else set
 
   let valid_name name d =
-    OpSet.exists (fun (n, _) -> name == n) d
+    OpSet.exists (fun b -> match b with
+        | O.B unboxed -> (O.name unboxed) == name) d
 end
 
 
-module Implementation = struct
-  type operation_key = string
+module Implementation(T: Irmin.Contents.S) = struct
+  module Op = Operation(T)
 
   (* An implementation is a map from operations to type-preserving functions
      with string parameters *)
-  type 'a t = (Operation.t, (Param.t list -> 'a -> 'a)) Hashtbl.t
+  type t = (string, Op.boxed_mi) Hashtbl.t
+
+  let implement unboxed func = Op.E (unboxed, func)
 
   (* Simply convert the list to a hashtable, return an exception if there
      are any duplicate function names *)
-  let implement fns =
+  let define fns =
     let h = Hashtbl.create 10 in
     let rec aux fns = match fns with
       | [] -> h
-      | (op, f)::fs -> match Hashtbl.find_opt h op with
-        | Some _ -> raise @@ Invalid_description ("Duplicate function name (" ^ (fst op) ^ ") in implementation")
-        | None -> Hashtbl.add h op f; aux fs
+      | f::fs -> match f with
+        | Op.E (unboxed, _) ->
+          let n = Op.name unboxed in
+
+          match Hashtbl.find_opt h n with
+
+          | Some _ -> raise @@ Invalid_description
+              ("Duplicate function name (" ^ n ^ ") in implementation")
+
+          (* This name has not been used before *)
+          | None -> Hashtbl.add h n f; aux fs
     in aux fns
 
   let find_operation_opt key impl =
@@ -125,14 +138,14 @@ end
 
 
 module type DESC = sig
-  type t
-  val api: t Description.t
+  module S: Irmin.Contents.S
+  val api: Description(S).t
 end
 
 
 module type IMPL = sig
-  type t
-  val api: t Implementation.t
+  module S: Irmin.Contents.S
+  val api: Implementation(S).t
 end
 
 

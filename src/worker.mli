@@ -22,6 +22,6 @@ module type W = sig
       in repository ~dir *)
 end
 
-module Make (Map : Map.S) (Impl: Interface.IMPL with type t = Map.value) : W
+module Make (M : Map.S) (Impl: Interface.IMPL with type S.t = M.value) : W
 (** Functor building a worker that operates on the map structure
     given an equality type and a set of operations on that type. *)

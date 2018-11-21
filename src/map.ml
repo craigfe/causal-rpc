@@ -3,7 +3,7 @@ open Lwt.Infix
 exception Empty_queue
 
 type task = {
-  name: Interface.Operation.t;
+  name: string;
   params: Interface.Param.t list;
   key: string;
 }
@@ -11,8 +11,8 @@ type task = {
 let task =
   let open Irmin.Type in
   record "task" (fun name params key -> { name; params; key })
-  |+ field "name" Interface.Operation.t (fun t -> t.name)
-  |+ field "params" (list Interface.Param.t) (fun t -> t.params)
+  |+ field "name" string (fun t -> t.name)
+  |+ field "params" (list Interface.Param.irmin_t) (fun t -> t.params)
   |+ field "key" string (fun t -> t.key)
   |> sealr
 
@@ -86,20 +86,21 @@ module type S = sig
   type key = string
   type value
   type queue
-  type operation = Interface.Operation.t
-  type param = Interface.Param.t
 
   type t
 
+  module Value: Irmin.Contents.S
   module Contents: Irmin.Contents.S with type t = (value, queue) contents
   module Store: Irmin.KV with type contents = Contents.t
   module Sync: Irmin.SYNC with type db = Store.t
   module JobQueue: JOB_QUEUE with module Store = Store
 
+  type 'a operation = 'a Interface.Operation(Value).unboxed
+
   (* Here for testing purposes *)
   val task_queue_is_empty: t -> bool
   val job_queue_is_empty: t -> bool
-  val generate_task_queue: operation -> param list -> t -> ('a, 'b) contents
+  val generate_task_queue: 'a operation -> Interface.Param.t list -> t -> ('a, 'c) contents
   (* ------------------------- *)
 
   val of_store: Sync.db -> t
@@ -112,12 +113,11 @@ module type S = sig
   val size: t -> int
   val keys: t -> key list
   val values: t -> value list
-  val map: operation -> param list -> t -> t
+  val map: 'a operation -> Interface.Param.t list -> t -> t
 end
 
 module Make
-    (Val : Irmin.Contents.S)
-    (Desc: Interface.DESC with type t = Val.t)
+    (Desc: Interface.DESC)
     (QueueType: QUEUE_TYPE)
     (JQueueMake: functor
        (Val: Irmin.Contents.S)
@@ -125,16 +125,17 @@ module Make
        -> (JOB_QUEUE with module Store = St)
     ) = struct
 
-  module Contents = MakeContents(Val)(QueueType)
+  module Value = Desc.S
+  module Contents = MakeContents(Desc.S)(QueueType)
   module Store = Irmin_unix.Git.FS.KV(Contents)
   module Sync = Irmin.Sync(Store)
-  module JobQueue = JQueueMake(Val)(Store)
+  module JobQueue = JQueueMake(Desc.S)(Store)
+  module Operation = Interface.Operation(Value)
 
   type key = string
-  type value = Val.t
+  type value = Value.t
   type queue = QueueType.t
-  type operation = Interface.Operation.t
-  type param = Interface.Param.t
+  type 'a operation = 'a Operation.unboxed
 
   type t = Sync.db
   (* A map is a branch in an Irmin Key-value store *)
@@ -234,8 +235,7 @@ module Make
   let job_queue_is_empty m =
     Lwt_main.run (JobQueue.Impl.is_empty m)
 
-  let generate_task_queue operation params map =
-    let open Interface in
+  let generate_task_queue (operation: 'a operation) params map =
     let name = Operation.name operation in
     let expected_param_count = Operation.arity operation in
     let true_param_count = List.length params in
@@ -247,11 +247,11 @@ module Make
 
     else
       keys map
-      |> List.map (fun key -> {name=operation; params; key})
+      |> List.map (fun key -> {name; params; key})
       |> (fun ops ->
           Logs.warn (fun m -> m "Generated task queue of [%s]"
                         (List.map (fun {name = n; params = _; key = k} ->
-                             Printf.sprintf "{name: %s; key %s}" (Operation.name n) k) ops
+                             Printf.sprintf "{name: %s; key %s}" n k) ops
                          |> String.concat ", "));
           ops)
       |> fun ops -> Task_queue (ops, []) (* Initially there are no pending operations *)

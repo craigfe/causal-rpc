@@ -1,70 +1,98 @@
+
 module Param : sig
-  type t
-  (** The type of parameters *)
+  type t =
+    | Unit of unit
+    | Bool of bool
+    | Char of char
+    | Int32 of int32
+    | Int64 of int64
+    | String of string
 
-  val t: t Irmin.Type.t
-  (** Irmin type for operations *)
-
-  val test_t: t Alcotest.testable
+  val irmin_t: t Irmin.Type.t
 end
 
-module Operation : sig
+type (_,_) func_type =
+  | BaseType : ('a, 'a -> 'a) func_type
+  | ParamType : (unit * ('a, 'b) func_type) -> ('a, (Param.t -> 'b)) func_type
 
-  type t
-  (** The type of operations *)
+type (_,_) func =
+  | Base : ('a -> 'a) -> ('a, 'a -> 'a) func
+  | Param : (Param.t -> ('a, 'b) func) -> ('a, (Param.t -> 'b)) func
 
-  val t: t Irmin.Type.t
-  (** Irmin type for operations *)
+module type OPERATION = sig
 
-  val test_t: t Alcotest.testable
+  type value
 
-  val name: t -> string
+  type 'a unboxed
+  (** The type of operations on type T.t *)
+
+  type t = | B: 'a unboxed -> t
+
+  type 'a matched_implementation = 'a unboxed * 'a
+
+  type boxed_mi = | E: 'a matched_implementation -> boxed_mi
+
+  val name: 'a unboxed -> string
   (** Return the name of an operation *)
 
-  val arity: t -> int
-  (** Return the number of arguments an operation takes *)
+  val typ: 'a unboxed -> (value, 'a) func_type
+  (** Return the type of an operation *)
 
-  val declare: string -> int -> t
+  val return: ('a, 'a -> 'a) func_type
+
+  val (-->): unit -> ('a, 'b) func_type -> ('a, Param.t -> 'b) func_type
+
+  val declare: string -> (value, 'b) func_type -> 'b unboxed
   (** Declare a function with a name and a number of arguments *)
+
+  val compare: t -> t -> int
 end
+
+module Operation(S: Irmin.Contents.S): OPERATION with type value = S.t
 
 (** Returned if a description or an implementation cannot be created *)
 exception Invalid_description of string
 
 (** A set of RPC operations *)
-module Description : sig
+module Description(S: Irmin.Contents.S) : sig
 
-  type 'a t
-  (** The type of descriptions *)
+  type t
+  (** The type of descriptions over type 'a*)
 
-  val define: Operation.t list -> 'a t
+  val describe: 'a Operation(S).unboxed -> Operation(S).t
+
+  val define: Operation(S).t list -> t
   (** Construct an RPC interface description from a list of declared functions *)
 
-  val valid_name: string -> 'a t -> bool
+  val valid_name: string -> t -> bool
   (** Test whether or not an operation is contained in the description *)
+
 end
 
 
-module Implementation : sig
-  type operation_key = string
+module Implementation(S: Irmin.Contents.S) : sig
 
+  type t
   (** The type of implementations of functions from type 'a to 'a *)
-  type 'a t
 
-  val implement: (Operation.t * (Param.t list -> 'a -> 'a)) list -> 'a t
+  val implement: 'a Operation(S).unboxed -> 'a -> Operation(S).boxed_mi
+
+  val define: Operation(S).boxed_mi list -> t
   (** Construct an RPC implementation from a list of pairs of operations and
       implementations of those operations *)
 
+  val find_operation_opt: string -> t -> Operation(S).boxed_mi option
   (** Retreive an operation from an implementation *)
-  val find_operation_opt: Operation.t -> 'a t -> (Param.t list -> 'a -> 'a) option
+
 end
 
 module type DESC = sig
-  type t
-  val api: t Description.t
+  module S: Irmin.Contents.S
+  val api: Description(S).t
 end
 
+
 module type IMPL = sig
-  type t
-  val api: t Implementation.t
+  module S: Irmin.Contents.S
+  val api: Implementation(S).t
 end

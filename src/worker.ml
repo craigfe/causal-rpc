@@ -11,10 +11,11 @@ module type W = sig
   val run: ?name:string -> ?dir:string -> client:string -> unit -> unit Lwt.t
 end
 
-module Make (M : Map.S) (Impl: Interface.IMPL with type t = M.value) = struct
+module Make (M : Map.S) (Impl: Interface.IMPL with type S.t = M.value) = struct
   include M
 
-  module I = Interface.Implementation
+  module I = Interface.Implementation(Impl.S)
+  module Operation = Interface.Operation(Value)
 
   (** Get an Irmin.store at a local or remote URI. *)
   let upstream uri branch =
@@ -68,12 +69,31 @@ module Make (M : Map.S) (Impl: Interface.IMPL with type t = M.value) = struct
         | _ -> invalid_arg "Can't happen by design")
     >>= Store.set m ~info:(Irmin_unix.info ~author:"map" "Completed task") ["task_queue"]
 
+  let pass_params boxed_mi params =
+    match boxed_mi with
+    | Operation.E matched_impl -> let rec aux: type a. a Operation.matched_implementation ->
+      Interface.Param.t list -> (value -> value) = fun matched_impl param ->
+        let (unboxed, func) = matched_impl in
+        let func_type = Operation.typ unboxed in
+
+        match func_type with
+        | Interface.Base final_func -> (match params with
+            | [] -> final_func
+            | _ -> invalid_arg "Too many parameters")
+
+        | Interface.Param intermediate_function -> (match params with
+            | (x::xs) -> aux (intermediate_function x) xs
+            | [] -> invalid_arg "Not enough parameters")
+
+      in aux matched_impl params
+
   let perform_task map (task:Map.task) =
     let old_val = find task.key map in
-    let operation = (match I.find_operation_opt task.name Impl.api with
+    let boxed_mi = (match I.find_operation_opt task.name Impl.api with
       | Some operation -> operation
       | None -> invalid_arg "Operation not found") in
-    let new_val = operation task.params old_val in
+
+    let new_val = (pass_params boxed_mi task.params) old_val in
     add task.key new_val map
 
   let handle_request store client job =

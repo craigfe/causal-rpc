@@ -4,7 +4,7 @@ exception Empty_queue
 (** A task is an operation, a list of parameters and a key specifying the value
     on which to perform the operation *)
 type task = {
-  name: Interface.Operation.t;
+  name: string;
   params: Interface.Param.t list;
   key: string;
 }
@@ -62,24 +62,22 @@ module type S = sig
   type queue
   (** The type of the job queue *)
 
-  type operation = Interface.Operation.t
-  (** The type of operations to be performed on the map *)
-
-  type param = Interface.Param.t
-  (** The type of parameters to supply to map operations *)
-
   type t
   (** The type of maps from type [key] to type [value] *)
 
+  module Value: Irmin.Contents.S
   module Contents: Irmin.Contents.S with type t = (value, queue) contents
   module Store: Irmin.KV with type contents = Contents.t
   module Sync: Irmin.SYNC with type db = Store.t
   module JobQueue: JOB_QUEUE with module Store = Store
 
+  type 'a operation = 'a Interface.Operation(Value).unboxed
+  (** The type of operations to be performed on the map *)
+
   (* -- TESTING PURPOSES --------------------------------- *)
   val task_queue_is_empty: t -> bool
   val job_queue_is_empty: t -> bool
-  val generate_task_queue: operation -> param list -> t -> ('a, 'b) contents
+  val generate_task_queue: 'a operation -> Interface.Param.t list -> t -> ('a, 'c) contents
   (* ----------------------------------------------------- *)
 
   val of_store: Sync.db -> t
@@ -116,24 +114,22 @@ module type S = sig
   val values: t -> value list
   (** Return a list of values in the map *)
 
-  val map: operation -> Interface.Param.t list -> t -> t
+  val map: 'a operation -> Interface.Param.t list -> t -> t
   (** [map m] returns a map with the same domain as [m] in which
       the associated value [a] of all bindings of [m] have been
       replaced by the result of applying _a_ function to [a] *)
 end
 
 module Make
-    (Val : Irmin.Contents.S)
-    (Desc: Interface.DESC with type t = Val.t)
+    (Desc: Interface.DESC)
     (QueueType: QUEUE_TYPE)
     (JQueueMake: functor
        (Val: Irmin.Contents.S)
        (St: Irmin.KV with type contents = (Val.t, QueueType.t) contents)
        -> (JOB_QUEUE with module Store = St)
     ): S
-  with type value = Val.t
+  with type value = Desc.S.t
    and type queue = QueueType.t
-   and type operation = Interface.Operation.t
 (** Functor building an implementation of the map structure given:
      - a value for the map to contain
      - a set of operations on that type
