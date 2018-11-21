@@ -13,3 +13,16 @@ let generate_rand_string ?(length=8) () =
   Array.init length rand_string
 	|> Array.to_list
 	|> String.concat ""
+
+let timestamp () =
+  let ts = Unix.gettimeofday() in
+  let tm = Unix.localtime ts in
+  let us, _s = modf ts in
+  Printf.sprintf "%04d-%02d-%02d %02d:%02d:%02d.%03d "
+    (1900 + tm.Unix.tm_year)
+    (1    + tm.Unix.tm_mon)
+    (tm.Unix.tm_mday)
+    (tm.Unix.tm_hour)
+    (tm.Unix.tm_min)
+    (tm.Unix.tm_sec)
+    (int_of_float (1_000. *. us))
