@@ -26,9 +26,13 @@ module Param = struct
   |> sealv
 end
 
-module Operation = struct
-  type t = string * int32
-  let t = let open Irmin.Type in pair string int32
+type (_,_) func_type =
+  | BaseType : ('a, 'a -> 'a) func_type
+  | ParamType : (unit * ('a, 'b) func_type) -> ('a, (Param.t -> 'b)) func_type
+
+type (_,_) func =
+  | Base : ('a -> 'a) -> ('a, 'a -> 'a) func
+  | Param : (Param.t -> ('a, 'b) func) -> ('a, (Param.t -> 'b)) func
 
   let test_t = Alcotest.(pair string int32)
 
