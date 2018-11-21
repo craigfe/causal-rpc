@@ -70,14 +70,17 @@ module type S = sig
   module Store: Irmin.KV with type contents = Contents.t
   module Sync: Irmin.SYNC with type db = Store.t
   module JobQueue: JOB_QUEUE with module Store = Store
+  module Operation: Interface.OPERATION with type value = value
 
   type 'a operation = 'a Interface.Operation(Value).unboxed
   (** The type of operations to be performed on the map *)
 
+  type 'a params = 'a Interface.Operation(Value).params
+
   (* -- TESTING PURPOSES --------------------------------- *)
   val task_queue_is_empty: t -> bool
   val job_queue_is_empty: t -> bool
-  val generate_task_queue: 'a operation -> Interface.Param.t list -> t -> ('a, 'c) contents
+  val generate_task_queue: 'a operation -> 'a params -> t -> (value, queue) contents
   (* ----------------------------------------------------- *)
 
   val of_store: Sync.db -> t
@@ -114,7 +117,7 @@ module type S = sig
   val values: t -> value list
   (** Return a list of values in the map *)
 
-  val map: 'a operation -> Interface.Param.t list -> t -> t
+  val map: 'a operation -> 'a params -> t -> t
   (** [map m] returns a map with the same domain as [m] in which
       the associated value [a] of all bindings of [m] have been
       replaced by the result of applying _a_ function to [a] *)

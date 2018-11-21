@@ -69,23 +69,33 @@ module Make (M : Map.S) (Impl: Interface.IMPL with type S.t = M.value) = struct
         | _ -> invalid_arg "Can't happen by design")
     >>= Store.set m ~info:(Irmin_unix.info ~author:"map" "Completed task") ["task_queue"]
 
+  (* We have a function of type (param -> ... -> param -> val -> val).
+     Here we take the parameters that were passed as part of the RPC and recursively apply them
+     to the function implementation until we are left with a function of type (val -> val). *)
   let pass_params boxed_mi params =
     match boxed_mi with
-    | Operation.E matched_impl -> let rec aux: type a. a Operation.matched_implementation ->
-      Interface.Param.t list -> (value -> value) = fun matched_impl param ->
+    | Operation.E matched_impl ->
         let (unboxed, func) = matched_impl in
         let func_type = Operation.typ unboxed in
 
-        match func_type with
-        | Interface.Base final_func -> (match params with
-            | [] -> final_func
-            | _ -> invalid_arg "Too many parameters")
+        (* We take a function type and a function _of that type_, and recursively apply parameters
+           to the function until it reaches 'BaseType', i.e. val -> val *)
+        let rec aux: type a.
+          (value, a) Interface.func_type
+          -> a
+          -> Interface.Param.t list
+          -> (value -> value) = fun func_type func params ->
 
-        | Interface.Param intermediate_function -> (match params with
-            | (x::xs) -> aux (intermediate_function x) xs
+          match func_type with
+          | Interface.BaseType -> (match params with
+              | [] -> func
+              | _ -> invalid_arg "Too many parameters")
+
+          | Interface.ParamType ((), nested_type) -> (match params with
+            | (x::xs) -> aux nested_type (func x) xs
             | [] -> invalid_arg "Not enough parameters")
 
-      in aux matched_impl params
+      in aux func_type func params
 
   let perform_task map (task:Map.task) =
     let old_val = find task.key map in

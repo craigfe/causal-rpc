@@ -33,9 +33,14 @@ type (_,_) func =
   | Base : ('a -> 'a) -> ('a, 'a -> 'a) func
   | Param : (Param.t -> ('a, 'b) func) -> ('a, (Param.t -> 'b)) func
 
+type (_,_) params_gadt =
+  | V : ('v, 'v -> 'v) params_gadt
+  | P : (Param.t * ('v,'a) params_gadt) -> ('v, Param.t -> 'a) params_gadt
+
 module type OPERATION = sig
   type value
   type 'a unboxed
+  type 'a params = (value, 'a) params_gadt
   type t = | B: 'a unboxed -> t
   type 'a matched_implementation = 'a unboxed * 'a
   type boxed_mi = | E: 'a matched_implementation -> boxed_mi
@@ -58,6 +63,7 @@ module Operation(T: Irmin.Contents.S): OPERATION with type value = T.t = struct
   }
   (* An operation is a function with a string name *)
 
+  type 'a params = (value, 'a) params_gadt
   type t = | B: 'a unboxed -> t
   type 'a matched_implementation = 'a unboxed * 'a
   type boxed_mi = | E: 'a matched_implementation -> boxed_mi
