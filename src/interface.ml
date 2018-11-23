@@ -4,10 +4,6 @@ type (_,_) func_type =
   | BaseType : ('a, 'a -> 'a) func_type
   | ParamType : (unit * ('a, 'b) func_type) -> ('a, (Param.t -> 'b)) func_type
 
-type (_,_) func =
-  | Base : ('a -> 'a) -> ('a, 'a -> 'a) func
-  | Param : (Param.t -> ('a, 'b) func) -> ('a, (Param.t -> 'b)) func
-
 type (_,_) params_gadt =
   | V : ('v, 'v -> 'v) params_gadt
   | P : (Param.t * ('v,'a) params_gadt) -> ('v, Param.t -> 'a) params_gadt
