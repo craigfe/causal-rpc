@@ -126,16 +126,16 @@ module Make
        (St: Irmin.KV with type contents = (Val.t, QueueType.t) contents)
        -> (JOB_QUEUE with module Store = St)
     ): S
-  with module Value = Desc.S
-   and module Operation = Interface.MakeOperation(Desc.S)
+  with module Value = Desc.Val
+   and module Operation = Interface.MakeOperation(Desc.Val)
    and type queue = QueueType.t = struct
 
-  module Value = Desc.S
-  module Contents = MakeContents(Desc.S)(QueueType)
+  module Value = Desc.Val
+  module Contents = MakeContents(Desc.Val)(QueueType)
   module Store = Kv_maker(Contents)
   module Sync = Irmin.Sync(Store)
-  module JobQueue = JQueueMake(Desc.S)(Store)
-  module Operation = Interface.MakeOperation(Desc.S)
+  module JobQueue = JQueueMake(Desc.Val)(Store)
+  module Operation = Interface.MakeOperation(Desc.Val)
 
   type key = string
   type value = Value.t

@@ -29,7 +29,7 @@ let increment_op = declare "increment" return
 let multiply_op = declare "multiply" (() --> return)
 
 module Definition = struct
-  module S = Int
+  module Val = Int
   module I = Interface.Description(Int)
   open I
 
@@ -46,9 +46,9 @@ module Definition = struct
     ]
 end
 
-module Implementation: Interface.IMPL with type S.t = int64 = struct
-  module S = Int
-  module I = Interface.MakeImplementation(Int)
+module Implementation: Interface.IMPL with type Val.t = int64 = struct
+  module Val = Int
+  module I = Interface.MakeImplementation(Val)
   open I
 
   let increment = Int64.add Int64.one

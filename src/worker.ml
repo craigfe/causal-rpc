@@ -11,11 +11,11 @@ module type W = sig
   val run: ?name:string -> ?dir:string -> client:string -> unit -> unit Lwt.t
 end
 
-module Make (M : Map.S) (Impl: Interface.IMPL with module S = M.Value): W = struct
+module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = struct
   include M
   type value = Value.t
 
-  module I = Interface.MakeImplementation(Impl.S)
+  module I = Interface.MakeImplementation(Impl.Val)
 
   (** Get an Irmin.store at a local or remote URI. *)
   let upstream uri branch =

@@ -134,14 +134,14 @@ end
 
 
 module type DESC = sig
-  module S: Irmin.Contents.S
-  val api: Description(S).t
+  module Val: Irmin.Contents.S
+  val api: Description(Val).t
 end
 
 
 module type IMPL = sig
-  module S: Irmin.Contents.S
-  val api: MakeImplementation(S).t
+  module Val: Irmin.Contents.S
+  val api: MakeImplementation(Val).t
 end
 
 

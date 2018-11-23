@@ -127,8 +127,8 @@ module Make
        (St: Irmin.KV with type contents = (Val.t, QueueType.t) contents)
        -> (JOB_QUEUE with module Store = St)
     ): S
-  with module Value = Desc.S
-   and module Operation = Interface.MakeOperation(Desc.S)
+  with module Value = Desc.Val
+   and module Operation = Interface.MakeOperation(Desc.Val)
    and type queue = QueueType.t
 (** Functor building an implementation of the map structure given:
      - a value for the map to contain
