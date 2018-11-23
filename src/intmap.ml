@@ -21,7 +21,7 @@ module Int: Irmin.Contents.S with type t = int64 = struct
 end
 
 
-module O = Interface.Operation(Int)
+module O = Interface.MakeOperation(Int)
 open O
 
 let double_op = declare "double" return
@@ -29,7 +29,7 @@ let increment_op = declare "increment" return
 let multiply_op = declare "multiply" (() --> return)
 
 module Definition = struct
-  module O = Interface.Operation(Int)
+  module O = Interface.MakeOperation(Int)
   module I = Interface.Description(Int)
 
   (* TODO: remove. This shouldn't be necessary*)

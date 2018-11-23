@@ -102,7 +102,7 @@ let test_increment () =
 
     IntMap.empty ~directory:(root ^ "test-0001") ()
     |> IntMap.add "a" Int64.one
-    |> IntMap.map (Intmap.Definition.double_op) Interface.V (* TODO: It shouldn't be necessary to pass the empty array here *)
+    |> IntMap.map (Definition.double_op) Interface.Unit (* TODO: It shouldn't be necessary to pass the empty array here *)
     |> IntMap.find "a"
     |> Alcotest.(check int64) "Issuing a double request on a single key" (Int64.of_int 2)
 

@@ -9,12 +9,12 @@ type (_,_) params_gadt =
   | P : (Param.t * ('v,'a) params_gadt) -> ('v, Param.t -> 'a) params_gadt
 
 module type OPERATION = sig
-  module S: Irmin.Contents.S
+  module Val: Irmin.Contents.S
 
   type 'a unboxed
   (** The type of operations on type T.t *)
 
-  type 'a params = (S.t, 'a) params_gadt
+  type 'a params = (Val.t, 'a) params_gadt
   type t = | B: 'a unboxed -> t
 
   type 'a matched_implementation = 'a unboxed * 'a
@@ -24,20 +24,20 @@ module type OPERATION = sig
   val name: 'a unboxed -> string
   (** Return the name of an operation *)
 
-  val typ: 'a unboxed -> (S.t, 'a) func_type
+  val typ: 'a unboxed -> (Val.t, 'a) func_type
   (** Return the type of an operation *)
 
   val return: ('a, 'a -> 'a) func_type
 
   val (-->): unit -> ('a, 'b) func_type -> ('a, Param.t -> 'b) func_type
 
-  val declare: string -> (S.t, 'b) func_type -> 'b unboxed
+  val declare: string -> (Val.t, 'b) func_type -> 'b unboxed
   (** Declare a function with a name and a number of arguments *)
 
   val compare: t -> t -> int
 end
 
-module Operation(St: Irmin.Contents.S): OPERATION with module S = St
+module MakeOperation(St: Irmin.Contents.S): OPERATION with module Val = St
 
 (** Returned if a description or an implementation cannot be created *)
 exception Invalid_description of string
@@ -57,11 +57,11 @@ module Description(S: Irmin.Contents.S) : sig
   val valid_name: string -> t -> bool
   (** Test whether or not an operation is contained in the description *)
 
-end with module Op = Operation(S)
+end with module Op = MakeOperation(S)
 
 module type IMPL_MAKER = sig
   module S: Irmin.Contents.S
-  module Op: OPERATION with module S = S
+  module Op: OPERATION with module Val = S
 
   type t
   (** The type of implementations of functions from type 'a to 'a *)
@@ -78,7 +78,7 @@ end
 
 module MakeImplementation(T: Irmin.Contents.S) : IMPL_MAKER
   with module S = T
-   and module Op = Operation(T)
+   and module Op = MakeOperation(T)
 
 module type DESC = sig
   module S: Irmin.Contents.S

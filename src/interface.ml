@@ -9,34 +9,33 @@ type (_,_) params_gadt =
   | P : (Param.t * ('v,'a) params_gadt) -> ('v, Param.t -> 'a) params_gadt
 
 module type OPERATION = sig
-  module S: Irmin.Contents.S
+  module Val: Irmin.Contents.S
 
   type 'a unboxed
-  type 'a params = (S.t, 'a) params_gadt
+  type 'a params = (Val.t, 'a) params_gadt
   type t = | B: 'a unboxed -> t
   type 'a matched_implementation = 'a unboxed * 'a
   type boxed_mi = | E: 'a matched_implementation -> boxed_mi
   val name: 'a unboxed -> string
-  val typ:  'a unboxed -> (S.t, 'a) func_type
+  val typ:  'a unboxed -> (Val.t, 'a) func_type
 
   val return: ('a, 'a -> 'a) func_type
   val (-->): unit -> ('a, 'b) func_type -> ('a, Param.t -> 'b) func_type
-  val declare: string -> (S.t, 'b) func_type -> 'b unboxed
+  val declare: string -> (Val.t, 'b) func_type -> 'b unboxed
 
   val compare: t -> t -> int
 end
 
-module Operation(T: Irmin.Contents.S): OPERATION with module S = T = struct
-  module S = T
-  type value = S.t
+module MakeOperation(T: Irmin.Contents.S): OPERATION with module Val = T = struct
+  module Val = T
 
   type 'a unboxed = {
     name: string;
-    typ: (value, 'a) func_type;
+    typ: (Val.t, 'a) func_type;
   }
   (* An operation is a function with a string name *)
 
-  type 'a params = (value, 'a) params_gadt
+  type 'a params = (Val.t, 'a) params_gadt
   type t = | B: 'a unboxed -> t
   type 'a matched_implementation = 'a unboxed * 'a
   type boxed_mi = | E: 'a matched_implementation -> boxed_mi
@@ -57,9 +56,8 @@ end
 
 
 exception Invalid_description of string
-module Description(T: Irmin.Contents.S) = struct
-  module S = T
-  module Op = Operation(T)
+module Description(Val: Irmin.Contents.S) = struct
+  module Op = MakeOperation(Val)
   module OpSet = Set.Make(Op)
 
   (* A description is a set of operations *)
@@ -84,7 +82,7 @@ end
 
 module type IMPL_MAKER = sig
   module S: Irmin.Contents.S
-  module Op: OPERATION with module S = S
+  module Op: OPERATION with module Val = S
 
   type t
   (** The type of implementations of functions from type 'a to 'a *)
@@ -101,9 +99,9 @@ end
 
 module MakeImplementation(T: Irmin.Contents.S): IMPL_MAKER
   with module S = T
-   and module Op = Operation(T) = struct
+   and module Op = MakeOperation(T) = struct
   module S = T
-  module Op = Operation(T)
+  module Op = MakeOperation(T)
 
   (* An implementation is a map from operations to type-preserving functions
      with string parameters *)

@@ -94,9 +94,9 @@ module type S = sig
   module Store: Irmin.KV with type contents = Contents.t
   module Sync: Irmin.SYNC with type db = Store.t
   module JobQueue: JOB_QUEUE with module Store = Store
-  module Operation: Interface.OPERATION with module S = Value
+  module Operation: Interface.OPERATION with module Val = Value
 
-  type 'a params = 'a Interface.Operation(Value).params
+  type 'a params = 'a Interface.MakeOperation(Value).params
 
   (* Here for testing purposes *)
   val task_queue_is_empty: t -> bool
@@ -127,7 +127,7 @@ module Make
        -> (JOB_QUEUE with module Store = St)
     ): S
   with module Value = Desc.S
-   and module Operation = Interface.Operation(Desc.S)
+   and module Operation = Interface.MakeOperation(Desc.S)
    and type queue = QueueType.t = struct
 
   module Value = Desc.S
@@ -135,7 +135,7 @@ module Make
   module Store = Kv_maker(Contents)
   module Sync = Irmin.Sync(Store)
   module JobQueue = JQueueMake(Desc.S)(Store)
-  module Operation = Interface.Operation(Desc.S)
+  module Operation = Interface.MakeOperation(Desc.S)
 
   type key = string
   type value = Value.t

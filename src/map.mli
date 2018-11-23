@@ -68,9 +68,9 @@ module type S = sig
   module Store: Irmin.KV with type contents = Contents.t
   module Sync: Irmin.SYNC with type db = Store.t
   module JobQueue: JOB_QUEUE with module Store = Store
-  module Operation: Interface.OPERATION with module S = Value
+  module Operation: Interface.OPERATION with module Val = Value
 
-  type 'a params = 'a Interface.Operation(Value).params
+  type 'a params = 'a Interface.MakeOperation(Value).params
 
   (* -- TESTING PURPOSES --------------------------------- *)
   val task_queue_is_empty: t -> bool
@@ -128,7 +128,7 @@ module Make
        -> (JOB_QUEUE with module Store = St)
     ): S
   with module Value = Desc.S
-   and module Operation = Interface.Operation(Desc.S)
+   and module Operation = Interface.MakeOperation(Desc.S)
    and type queue = QueueType.t
 (** Functor building an implementation of the map structure given:
      - a value for the map to contain
