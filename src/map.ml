@@ -83,26 +83,26 @@ end
 exception Malformed_params of string
 module type S = sig
 
+  module Value: Irmin.Contents.S
+
   type key = string
-  type value
+  type value = Value.t
   type queue
 
   type t
 
-  module Value: Irmin.Contents.S
   module Contents: Irmin.Contents.S with type t = (value, queue) contents
   module Store: Irmin.KV with type contents = Contents.t
   module Sync: Irmin.SYNC with type db = Store.t
   module JobQueue: JOB_QUEUE with module Store = Store
-  module Operation: Interface.OPERATION with type value = value
+  module Operation: Interface.OPERATION with module S = Value
 
-  type 'a operation = 'a Interface.Operation(Value).unboxed
   type 'a params = 'a Interface.Operation(Value).params
 
   (* Here for testing purposes *)
   val task_queue_is_empty: t -> bool
   val job_queue_is_empty: t -> bool
-  val generate_task_queue: 'a operation -> 'a params -> t -> (value, queue) contents
+  val generate_task_queue: 'a Operation.unboxed -> 'a params -> t -> (value, queue) contents
   (* ------------------------- *)
 
   val of_store: Sync.db -> t
@@ -115,7 +115,7 @@ module type S = sig
   val size: t -> int
   val keys: t -> key list
   val values: t -> value list
-  val map: 'a operation -> 'a params -> t -> t
+  val map: 'a Operation.unboxed -> 'a params -> t -> t
 end
 
 module Make
@@ -126,19 +126,22 @@ module Make
        (Val: Irmin.Contents.S)
        (St: Irmin.KV with type contents = (Val.t, QueueType.t) contents)
        -> (JOB_QUEUE with module Store = St)
-    ) = struct
+    ): S
+  with module Value = Desc.S
+   and module Operation = Interface.Operation(Desc.S)
+   and type value = Desc.S.t
+   and type queue = QueueType.t = struct
 
   module Value = Desc.S
   module Contents = MakeContents(Desc.S)(QueueType)
   module Store = Kv_maker(Contents)
   module Sync = Irmin.Sync(Store)
   module JobQueue = JQueueMake(Desc.S)(Store)
-  module Operation = Interface.Operation(Value)
+  module Operation = Interface.Operation(Desc.S)
 
   type key = string
   type value = Value.t
   type queue = QueueType.t
-  type 'a operation = 'a Operation.unboxed
   type 'a params = 'a Operation.params
 
   type t = Sync.db
@@ -244,7 +247,7 @@ module Make
     | Interface.V -> []
     | Interface.P (p, ps) -> (p::flatten_params(ps))
 
-  let generate_task_queue: type a. a operation -> a params -> t -> (value, queue) contents = fun operation params map ->
+  let generate_task_queue: type a. a Operation.unboxed -> a params -> t -> (value, queue) contents = fun operation params map ->
 
     let name = Operation.name operation in
     let param_list = flatten_params params in
@@ -263,7 +266,7 @@ module Make
     Store.set ~info:(Irmin_unix.info ~author:"map" "specifying workload")
       m ["task_queue"] q
 
-  let map: type a. a operation -> a params -> t -> t = fun operation params m ->
+  let map: type a. a Operation.unboxed -> a params -> t -> t = fun operation params m ->
 
     let lwt =
 

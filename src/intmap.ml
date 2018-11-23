@@ -28,24 +28,33 @@ let double_op = declare "double" return
 let increment_op = declare "increment" return
 let multiply_op = declare "multiply" (() --> return)
 
-module Definition: Interface.DESC with type S.t = int64 = struct
+module Definition = struct
+  module O = Interface.Operation(Int)
   module I = Interface.Description(Int)
-  open I
+
+  (* TODO: remove. This shouldn't be necessary*)
+  let double_op = O.declare "double" return
+  let increment_op = O.declare "increment" return
+  let multiply_op = O.declare "multiply" (() --> return)
 
   module S = Int
 
-  let api = define [
-      describe double_op;
-      describe increment_op;
-      describe multiply_op
+  let api = I.define [
+      I.describe double_op;
+      I.describe increment_op;
+      I.describe multiply_op
     ]
 end
 
 module Implementation: Interface.IMPL with type S.t = int64 = struct
-  module I = Interface.Implementation(Int)
+  module S = Int
+  module I = Interface.MakeImplementation(Int)
   open I
 
-  module S = Int
+  (* TODO: remove. This shouldn't be necessary*)
+  let double_op = I.Op.declare "double" return
+  let increment_op = I.Op.declare "increment" return
+  let multiply_op = I.Op.declare "multiply" (() --> return)
 
   let increment = Int64.add Int64.one
   let double = Int64.mul (Int64.of_int 2)

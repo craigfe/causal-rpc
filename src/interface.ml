@@ -38,24 +38,26 @@ type (_,_) params_gadt =
   | P : (Param.t * ('v,'a) params_gadt) -> ('v, Param.t -> 'a) params_gadt
 
 module type OPERATION = sig
-  type value
+  module S: Irmin.Contents.S
+
   type 'a unboxed
-  type 'a params = (value, 'a) params_gadt
+  type 'a params = (S.t, 'a) params_gadt
   type t = | B: 'a unboxed -> t
   type 'a matched_implementation = 'a unboxed * 'a
   type boxed_mi = | E: 'a matched_implementation -> boxed_mi
   val name: 'a unboxed -> string
-  val typ:  'a unboxed -> (value, 'a) func_type
+  val typ:  'a unboxed -> (S.t, 'a) func_type
 
   val return: ('a, 'a -> 'a) func_type
   val (-->): unit -> ('a, 'b) func_type -> ('a, Param.t -> 'b) func_type
-  val declare: string -> (value, 'b) func_type -> 'b unboxed
+  val declare: string -> (S.t, 'b) func_type -> 'b unboxed
 
   val compare: t -> t -> int
 end
 
-module Operation(T: Irmin.Contents.S): OPERATION with type value = T.t = struct
-  type value = T.t
+module Operation(T: Irmin.Contents.S): OPERATION with module S = T = struct
+  module S = T
+  type value = S.t
 
   type 'a unboxed = {
     name: string;
@@ -85,14 +87,14 @@ end
 
 exception Invalid_description of string
 module Description(T: Irmin.Contents.S) = struct
-
-  module O = Operation(T)
-  module OpSet = Set.Make(O)
+  module S = T
+  module Op = Operation(T)
+  module OpSet = Set.Make(Op)
 
   (* A description is a set of operations *)
   type t = OpSet.t
 
-  let describe unboxed = O.B unboxed
+  let describe unboxed = Op.B unboxed
 
   (* Simply convert the list to a set, return an exception if the list
      contains a duplicate *)
@@ -106,11 +108,30 @@ module Description(T: Irmin.Contents.S) = struct
 
   let valid_name name d =
     OpSet.exists (fun b -> match b with
-        | O.B unboxed -> (O.name unboxed) == name) d
+        | Op.B unboxed -> (Op.name unboxed) == name) d
 end
 
+module type IMPL_MAKER = sig
+  module S: Irmin.Contents.S
+  module Op: OPERATION with module S = S
 
-module Implementation(T: Irmin.Contents.S) = struct
+  type t
+  (** The type of implementations of functions from type 'a to 'a *)
+
+  val implement: 'a Op.unboxed -> 'a -> Op.boxed_mi
+
+  val define: Op.boxed_mi list -> t
+  (** Construct an RPC implementation from a list of pairs of operations and
+      implementations of those operations *)
+
+  val find_operation_opt: string -> t -> Op.boxed_mi option
+  (** Retreive an operation from an implementation *)
+end
+
+module MakeImplementation(T: Irmin.Contents.S): IMPL_MAKER
+  with module S = T
+   and module Op = Operation(T) = struct
+  module S = T
   module Op = Operation(T)
 
   (* An implementation is a map from operations to type-preserving functions
@@ -151,7 +172,7 @@ end
 
 module type IMPL = sig
   module S: Irmin.Contents.S
-  val api: Implementation(S).t
+  val api: MakeImplementation(S).t
 end
 
 

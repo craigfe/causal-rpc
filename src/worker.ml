@@ -11,11 +11,10 @@ module type W = sig
   val run: ?name:string -> ?dir:string -> client:string -> unit -> unit Lwt.t
 end
 
-module Make (M : Map.S) (Impl: Interface.IMPL with type S.t = M.value) = struct
+module Make (M : Map.S) (Impl: Interface.IMPL with module S = M.Value and type S.t = M.value): W = struct
   include M
 
-  module I = Interface.Implementation(Impl.S)
-  module Operation = Interface.Operation(Value)
+  module I = Interface.MakeImplementation(Impl.S)
 
   (** Get an Irmin.store at a local or remote URI. *)
   let upstream uri branch =
@@ -74,9 +73,9 @@ module Make (M : Map.S) (Impl: Interface.IMPL with type S.t = M.value) = struct
      to the function implementation until we are left with a function of type (val -> val). *)
   let pass_params boxed_mi params =
     match boxed_mi with
-    | Operation.E matched_impl ->
+    | I.Op.E matched_impl ->
         let (unboxed, func) = matched_impl in
-        let func_type = Operation.typ unboxed in
+        let func_type = I.Op.typ unboxed in
 
         (* We take a function type and a function _of that type_, and recursively apply parameters
            to the function until it reaches 'BaseType', i.e. val -> val *)
