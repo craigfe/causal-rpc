@@ -83,7 +83,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module S = M.Value): W = stru
         let rec aux: type a.
           (value, a) Interface.func_type
           -> a
-          -> Interface.Param.t list
+          -> Type.Param.t list
           -> (value -> value) = fun func_type func params ->
 
           match func_type with

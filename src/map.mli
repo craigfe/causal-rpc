@@ -5,7 +5,7 @@ exception Empty_queue
     on which to perform the operation *)
 type task = {
   name: string;
-  params: Interface.Param.t list;
+  params: Type.Param.t list;
   key: string;
 }
 

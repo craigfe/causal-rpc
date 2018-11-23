@@ -4,7 +4,7 @@ exception Empty_queue
 
 type task = {
   name: string;
-  params: Interface.Param.t list;
+  params: Type.Param.t list;
   key: string;
 }
 
@@ -12,7 +12,7 @@ let task =
   let open Irmin.Type in
   record "task" (fun name params key -> { name; params; key })
   |+ field "name" string (fun t -> t.name)
-  |+ field "params" (list Interface.Param.irmin_t) (fun t -> t.params)
+  |+ field "params" (list Type.Param.irmin_t) (fun t -> t.params)
   |+ field "key" string (fun t -> t.key)
   |> sealr
 
@@ -240,7 +240,7 @@ module Make
   let job_queue_is_empty m =
     Lwt_main.run (JobQueue.Impl.is_empty m)
 
-  let rec flatten_params: type a. a params -> Interface.Param.t list = fun ps ->
+  let rec flatten_params: type a. a params -> Type.Param.t list = fun ps ->
     match ps with
     | Interface.V -> []
     | Interface.P (p, ps) -> (p::flatten_params(ps))

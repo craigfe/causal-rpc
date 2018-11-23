@@ -60,7 +60,7 @@ module Implementation: Interface.IMPL with type S.t = int64 = struct
   let double = Int64.mul (Int64.of_int 2)
 
   let multiply x = match x with
-    | Interface.Param.Int64 i -> Int64.mul i
+    | Type.Param.Int64 i -> Int64.mul i
     | _ -> invalid_arg "Wrong argument type"
 
   let api = define [
