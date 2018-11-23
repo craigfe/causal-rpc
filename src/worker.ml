@@ -11,8 +11,9 @@ module type W = sig
   val run: ?name:string -> ?dir:string -> client:string -> unit -> unit Lwt.t
 end
 
-module Make (M : Map.S) (Impl: Interface.IMPL with module S = M.Value and type S.t = M.value): W = struct
+module Make (M : Map.S) (Impl: Interface.IMPL with module S = M.Value): W = struct
   include M
+  type value = Value.t
 
   module I = Interface.MakeImplementation(Impl.S)
 

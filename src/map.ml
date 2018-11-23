@@ -86,12 +86,11 @@ module type S = sig
   module Value: Irmin.Contents.S
 
   type key = string
-  type value = Value.t
   type queue
 
   type t
 
-  module Contents: Irmin.Contents.S with type t = (value, queue) contents
+  module Contents: Irmin.Contents.S with type t = (Value.t, queue) contents
   module Store: Irmin.KV with type contents = Contents.t
   module Sync: Irmin.SYNC with type db = Store.t
   module JobQueue: JOB_QUEUE with module Store = Store
@@ -102,19 +101,19 @@ module type S = sig
   (* Here for testing purposes *)
   val task_queue_is_empty: t -> bool
   val job_queue_is_empty: t -> bool
-  val generate_task_queue: 'a Operation.unboxed -> 'a params -> t -> (value, queue) contents
+  val generate_task_queue: 'a Operation.unboxed -> 'a params -> t -> (Value.t, queue) contents
   (* ------------------------- *)
 
   val of_store: Sync.db -> t
   val empty: ?directory:string -> unit -> t
   val is_empty: t -> bool
   val mem: key -> t -> bool
-  val add: key -> value -> t -> t
-  val find: key -> t -> value
+  val add: key -> Value.t -> t -> t
+  val find: key -> t -> Value.t
   val remove: key -> t -> t
   val size: t -> int
   val keys: t -> key list
-  val values: t -> value list
+  val values: t -> Value.t list
   val map: 'a Operation.unboxed -> 'a params -> t -> t
 end
 
@@ -129,7 +128,6 @@ module Make
     ): S
   with module Value = Desc.S
    and module Operation = Interface.Operation(Desc.S)
-   and type value = Desc.S.t
    and type queue = QueueType.t = struct
 
   module Value = Desc.S

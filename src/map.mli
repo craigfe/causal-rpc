@@ -58,16 +58,13 @@ module type S = sig
   type key = string
   (** The type of the map keys *)
 
-  type value = Value.t
-  (** The type of the map values *)
-
   type queue
   (** The type of the job queue *)
 
   type t
   (** The type of maps from type [key] to type [value] *)
 
-  module Contents: Irmin.Contents.S with type t = (value, queue) contents
+  module Contents: Irmin.Contents.S with type t = (Value.t, queue) contents
   module Store: Irmin.KV with type contents = Contents.t
   module Sync: Irmin.SYNC with type db = Store.t
   module JobQueue: JOB_QUEUE with module Store = Store
@@ -78,7 +75,7 @@ module type S = sig
   (* -- TESTING PURPOSES --------------------------------- *)
   val task_queue_is_empty: t -> bool
   val job_queue_is_empty: t -> bool
-  val generate_task_queue: 'a Operation.unboxed -> 'a params -> t -> (value, queue) contents
+  val generate_task_queue: 'a Operation.unboxed -> 'a params -> t -> (Value.t, queue) contents
   (* ----------------------------------------------------- *)
 
   val of_store: Sync.db -> t
@@ -93,12 +90,12 @@ module type S = sig
   val mem: key -> t -> bool
   (** [mem x m] returns true iff [m] contains a binding for [x] *)
 
-  val add: key -> value -> t -> t
+  val add: key -> Value.t -> t -> t
   (** [add x y m] returns a map containing the same bindings as [m],
       plus a binding of [x] to [y]. If [x] was already bound in [m],
       its previous binding is replaced. *)
 
-  val find: key -> t -> value
+  val find: key -> t -> Value.t
   (** [find x m] returns the current binding of [x] in [m],
       or raises [Not_found] if no such binding exists. *)
 
@@ -112,7 +109,7 @@ module type S = sig
   val keys: t -> key list
   (** Return a list of keys in the map *)
 
-  val values: t -> value list
+  val values: t -> Value.t list
   (** Return a list of values in the map *)
 
   val map: 'a Operation.unboxed -> 'a params -> t -> t
@@ -132,7 +129,6 @@ module Make
     ): S
   with module Value = Desc.S
    and module Operation = Interface.Operation(Desc.S)
-   and type value = Desc.S.t
    and type queue = QueueType.t
 (** Functor building an implementation of the map structure given:
      - a value for the map to contain
