@@ -242,8 +242,8 @@ module Make
 
   let rec flatten_params: type a. a params -> Type.Param.t list = fun ps ->
     match ps with
-    | Interface.V -> []
-    | Interface.P (p, ps) -> (p::flatten_params(ps))
+    | Interface.Unit -> []
+    | Interface.Param (p, ps) -> (p::flatten_params(ps))
 
   let generate_task_queue: type a. a Operation.unboxed -> a params -> t -> (value, queue) contents = fun operation params map ->
 

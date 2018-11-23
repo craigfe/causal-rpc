@@ -5,8 +5,8 @@ type (_,_) func_type =
   | ParamType : (unit * ('a, 'b) func_type) -> ('a, (Param.t -> 'b)) func_type
 
 type (_,_) params_gadt =
-  | V : ('v, 'v -> 'v) params_gadt
-  | P : (Param.t * ('v,'a) params_gadt) -> ('v, Param.t -> 'a) params_gadt
+  | Unit : ('v, 'v -> 'v) params_gadt
+  | Param : (Param.t * ('v,'a) params_gadt) -> ('v, Param.t -> 'a) params_gadt
 
 module type OPERATION = sig
   module Val: Irmin.Contents.S
