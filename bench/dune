@@ -1,0 +1,4 @@
+(executable
+  (name datastructures)
+  (libraries trace_rpc
+             core_bench))
