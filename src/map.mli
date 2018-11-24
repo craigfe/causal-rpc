@@ -52,6 +52,8 @@ module MakeContents (Val: Irmin.Contents.S) (JQueue: QUEUE_TYPE): Irmin.Contents
   with type t = (Val.t, JQueue.t) contents
 
 exception Malformed_params of string
+exception Timeout
+
 module type S = sig
   module Value: Irmin.Contents.S
 
@@ -112,7 +114,7 @@ module type S = sig
   val values: t -> Value.t list
   (** Return a list of values in the map *)
 
-  val map: 'a Operation.Unboxed.t -> 'a params -> t -> t
+  val map: ?timeout:float -> 'a Operation.Unboxed.t -> 'a params -> t -> t
   (** [map m] returns a map with the same domain as [m] in which
       the associated value [a] of all bindings of [m] have been
       replaced by the result of applying _a_ function to [a] *)

@@ -81,6 +81,8 @@ module MakeContents (Val: Irmin.Contents.S) (JQueueType: QUEUE_TYPE): Irmin.Cont
 end
 
 exception Malformed_params of string
+exception Timeout
+
 module type S = sig
 
   module Value: Irmin.Contents.S
@@ -114,7 +116,7 @@ module type S = sig
   val size: t -> int
   val keys: t -> key list
   val values: t -> Value.t list
-  val map: 'a Operation.Unboxed.t -> 'a params -> t -> t
+  val map: ?timeout:float -> 'a Operation.Unboxed.t -> 'a params -> t -> t
 end
 
 module Make
@@ -253,9 +255,9 @@ module Make
       keys map
       |> List.map (fun key -> {name; params = param_list; key})
       |> (fun ops ->
-          Logs.warn (fun m -> m "Generated task queue of [%s]"
+          Logs.app (fun m -> m "Generated task queue of [%s]"
                         (List.map (fun {name = n; params = _; key = k} ->
-                             Printf.sprintf "{name: %s; key %s}" n k) ops
+                             Printf.sprintf "{name: %s; key: %s}" n k) ops
                          |> String.concat ", "));
           ops)
       |> fun ops -> Task_queue (ops, []) (* Initially there are no pending operations *)
@@ -270,7 +272,8 @@ module Make
     | `Added _ -> (inactivity_count := 0; Lwt.return_unit)
     | _ -> Lwt.return_unit
 
-  let map: type a. a Operation.Unboxed.t -> a params -> t -> t = fun operation params m ->
+  let map: type a. ?timeout:float -> a Operation.Unboxed.t -> a params -> t -> t =
+    fun ?(timeout=5.0) operation params m ->
 
     let lwt =
 
@@ -296,13 +299,13 @@ module Make
       >>= fun _ -> Store.watch branch reset_count
       >>= fun watch ->
 
-            while not(task_queue_is_empty branch) && (!inactivity_count < 5) do
-              Unix.sleep 1;
+            while not(task_queue_is_empty branch) && (!inactivity_count < 8) do
+              Unix.sleepf (timeout /. 8.0);
               inactivity_count := !inactivity_count + 1;
             done;
 
-            if !inactivity_count >= 5 then
-              Lwt.fail_with "Timeout"
+            if !inactivity_count >= 8 then
+              Lwt.fail Timeout
             else
               Store.unwatch watch
 
