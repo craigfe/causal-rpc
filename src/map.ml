@@ -264,6 +264,12 @@ module Make
     Store.set ~info:(Irmin_unix.info ~author:"map" "specifying workload")
       m ["task_queue"] q
 
+
+  let inactivity_count = ref 0
+  let reset_count diff = match diff with
+    | `Added _ -> (inactivity_count := 0; Lwt.return_unit)
+    | _ -> Lwt.return_unit
+
   let map: type a. a Operation.Unboxed.t -> a params -> t -> t = fun operation params m ->
 
     let lwt =
@@ -287,7 +293,18 @@ module Make
       >>= fun () -> set_task_queue (generate_task_queue operation params m) branch
 
       (* Wait for the task queue to be empty *)
-      >|= (fun _ -> while not(task_queue_is_empty branch) do Unix.sleep 1 done)
+      >>= fun _ -> Store.watch branch reset_count
+      >>= fun watch ->
+
+            while not(task_queue_is_empty branch) && (!inactivity_count < 5) do
+              Unix.sleep 1;
+              inactivity_count := !inactivity_count + 1;
+            done;
+
+            if !inactivity_count >= 5 then
+              Lwt.fail_with "Timeout"
+            else
+              Store.unwatch watch
 
       (* Merge the map branch into master *)
       >>= fun _ -> Store.merge_with_branch m
@@ -299,4 +316,7 @@ module Make
       >|= fun _ -> Logs.app (fun m -> m "Map operation complete. Branch name %s" map_name)
 
     in Lwt_main.run lwt; m
+
+
+  let _ = Irmin_unix.set_listen_dir_hook ()
 end
