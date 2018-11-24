@@ -23,4 +23,24 @@ module Param = struct
   |~ case1 "Int64" Irmin.Type.int64 (fun i -> Int64 i)
   |~ case1 "String" Irmin.Type.string (fun u -> String u)
   |> sealv
+
+  let equal a b = match (a, b) with
+    | Unit (), Unit () -> true
+    | Bool b1, Bool b2 -> (b1 == b2)
+    | Char c1, Char c2 -> (c1 == c2)
+    | Int32 i1, Int32 i2 -> (i1 == i2)
+    | Int64 i1, Int64 i2 -> (i1 == i2)
+    | String s1, String s2 -> (s1 == s2)
+    | _ -> false
+
+  let pp ppf v = match v with
+      | Unit () -> Fmt.pf ppf "Unit ()"
+      | Bool b -> Fmt.pf ppf "Bool %b" b
+      | Char c -> Fmt.pf ppf "Char %c" c
+      | Int32 i -> Fmt.pf ppf "Int32 %ld" i
+      | Int64 i -> Fmt.pf ppf "Int64 %Ld" i
+      | String s -> Fmt.pf ppf "String %s" s
+
+  let test_t = Alcotest.testable pp equal
+
 end

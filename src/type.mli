@@ -8,4 +8,5 @@ module Param : sig
     | String of string
 
   val irmin_t: t Irmin.Type.t
+  val test_t: t Alcotest.testable
 end
