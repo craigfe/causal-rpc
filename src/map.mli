@@ -75,7 +75,7 @@ module type S = sig
   (* -- TESTING PURPOSES --------------------------------- *)
   val task_queue_is_empty: t -> bool
   val job_queue_is_empty: t -> bool
-  val generate_task_queue: 'a Operation.unboxed -> 'a params -> t -> (Value.t, queue) contents
+  val generate_task_queue: 'a Operation.Unboxed.t -> 'a params -> t -> (Value.t, queue) contents
   (* ----------------------------------------------------- *)
 
   val of_store: Sync.db -> t
@@ -112,7 +112,7 @@ module type S = sig
   val values: t -> Value.t list
   (** Return a list of values in the map *)
 
-  val map: 'a Operation.unboxed -> 'a params -> t -> t
+  val map: 'a Operation.Unboxed.t -> 'a params -> t -> t
   (** [map m] returns a map with the same domain as [m] in which
       the associated value [a] of all bindings of [m] have been
       replaced by the result of applying _a_ function to [a] *)

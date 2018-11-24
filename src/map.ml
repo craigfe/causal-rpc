@@ -101,7 +101,7 @@ module type S = sig
   (* Here for testing purposes *)
   val task_queue_is_empty: t -> bool
   val job_queue_is_empty: t -> bool
-  val generate_task_queue: 'a Operation.unboxed -> 'a params -> t -> (Value.t, queue) contents
+  val generate_task_queue: 'a Operation.Unboxed.t -> 'a params -> t -> (Value.t, queue) contents
   (* ------------------------- *)
 
   val of_store: Sync.db -> t
@@ -114,7 +114,7 @@ module type S = sig
   val size: t -> int
   val keys: t -> key list
   val values: t -> Value.t list
-  val map: 'a Operation.unboxed -> 'a params -> t -> t
+  val map: 'a Operation.Unboxed.t -> 'a params -> t -> t
 end
 
 module Make
@@ -245,9 +245,9 @@ module Make
     | Interface.Unit -> []
     | Interface.Param (p, ps) -> (p::flatten_params(ps))
 
-  let generate_task_queue: type a. a Operation.unboxed -> a params -> t -> (value, queue) contents = fun operation params map ->
+  let generate_task_queue: type a. a Operation.Unboxed.t -> a params -> t -> (value, queue) contents = fun operation params map ->
 
-    let name = Operation.name operation in
+    let name = Operation.Unboxed.name operation in
     let param_list = flatten_params params in
 
       keys map
@@ -264,7 +264,7 @@ module Make
     Store.set ~info:(Irmin_unix.info ~author:"map" "specifying workload")
       m ["task_queue"] q
 
-  let map: type a. a Operation.unboxed -> a params -> t -> t = fun operation params m ->
+  let map: type a. a Operation.Unboxed.t -> a params -> t -> t = fun operation params m ->
 
     let lwt =
 

@@ -11,17 +11,21 @@ type (_,_) params_gadt =
 module type OPERATION = sig
   module Val: Irmin.Contents.S
 
-  type 'a unboxed
+  module Unboxed: sig
+    type 'a t
+
+    val name: 'a t -> string
+    val typ:  'a t -> (Val.t, 'a) func_type
+  end
+
   type 'a params = (Val.t, 'a) params_gadt
-  type t = | B: 'a unboxed -> t
-  type 'a matched_implementation = 'a unboxed * 'a
+  type t = | B: 'a Unboxed.t -> t
+  type 'a matched_implementation = 'a Unboxed.t * 'a
   type boxed_mi = | E: 'a matched_implementation -> boxed_mi
-  val name: 'a unboxed -> string
-  val typ:  'a unboxed -> (Val.t, 'a) func_type
 
   val return: ('a, 'a -> 'a) func_type
   val (-->): unit -> ('a, 'b) func_type -> ('a, Param.t -> 'b) func_type
-  val declare: string -> (Val.t, 'b) func_type -> 'b unboxed
+  val declare: string -> (Val.t, 'b) func_type -> 'b Unboxed.t
 
   val compare: t -> t -> int
 end
@@ -29,24 +33,26 @@ end
 module MakeOperation(T: Irmin.Contents.S): OPERATION with module Val = T = struct
   module Val = T
 
-  type 'a unboxed = {
-    name: string;
-    typ: (Val.t, 'a) func_type;
-  }
-  (* An operation is a function with a string name *)
+  module Unboxed = struct
+    type 'a t = {
+      name: string;
+      typ: (Val.t, 'a) func_type;
+    }
+
+    let name {name = n; _} = n
+    let typ {name = _; typ = t} = t
+  end
 
   type 'a params = (Val.t, 'a) params_gadt
-  type t = | B: 'a unboxed -> t
-  type 'a matched_implementation = 'a unboxed * 'a
+  type t = | B: 'a Unboxed.t -> t
+  type 'a matched_implementation = 'a Unboxed.t * 'a
   type boxed_mi = | E: 'a matched_implementation -> boxed_mi
 
-  let name {name = n; _} = n
-  let typ {name = _; typ = t} = t
 
   let return = BaseType
   let (-->) p f = ParamType (p, f)
 
-  let declare name typ = {name; typ}
+  let declare name typ: 'a Unboxed.t = {name; typ}
 
   let compare a b =
     match a with
@@ -77,7 +83,7 @@ module Description(Val: Irmin.Contents.S) = struct
 
   let valid_name name d =
     OpSet.exists (fun b -> match b with
-        | Op.B unboxed -> (Op.name unboxed) == name) d
+        | Op.B unboxed -> (Op.Unboxed.name unboxed) == name) d
 end
 
 module type IMPL_MAKER = sig
@@ -87,7 +93,7 @@ module type IMPL_MAKER = sig
   type t
   (** The type of implementations of functions from type 'a to 'a *)
 
-  val implement: 'a Op.unboxed -> 'a -> Op.boxed_mi
+  val implement: 'a Op.Unboxed.t -> 'a -> Op.boxed_mi
 
   val define: Op.boxed_mi list -> t
   (** Construct an RPC implementation from a list of pairs of operations and
@@ -117,7 +123,7 @@ module MakeImplementation(T: Irmin.Contents.S): IMPL_MAKER
       | [] -> h
       | f::fs -> match f with
         | Op.E (unboxed, _) ->
-          let n = Op.name unboxed in
+          let n = Op.Unboxed.name unboxed in
 
           match Hashtbl.find_opt h n with
 

@@ -11,27 +11,29 @@ type (_,_) params_gadt =
 module type OPERATION = sig
   module Val: Irmin.Contents.S
 
-  type 'a unboxed
-  (** The type of operations on type T.t *)
+  module Unboxed: sig
+    type 'a t
+    (** The type of operations on type T.t *)
+
+    val name: 'a t -> string
+    (** Return the name of an operation *)
+
+    val typ: 'a t -> (Val.t, 'a) func_type
+    (** Return the name of an operation *)
+  end
 
   type 'a params = (Val.t, 'a) params_gadt
-  type t = | B: 'a unboxed -> t
+  type t = | B: 'a Unboxed.t -> t
 
-  type 'a matched_implementation = 'a unboxed * 'a
+  type 'a matched_implementation = 'a Unboxed.t * 'a
 
   type boxed_mi = | E: 'a matched_implementation -> boxed_mi
-
-  val name: 'a unboxed -> string
-  (** Return the name of an operation *)
-
-  val typ: 'a unboxed -> (Val.t, 'a) func_type
-  (** Return the type of an operation *)
 
   val return: ('a, 'a -> 'a) func_type
 
   val (-->): unit -> ('a, 'b) func_type -> ('a, Param.t -> 'b) func_type
 
-  val declare: string -> (Val.t, 'b) func_type -> 'b unboxed
+  val declare: string -> (Val.t, 'b) func_type -> 'b Unboxed.t
   (** Declare a function with a name and a number of arguments *)
 
   val compare: t -> t -> int
@@ -49,7 +51,7 @@ module Description(S: Irmin.Contents.S) : sig
   type t
   (** The type of descriptions over type 'a*)
 
-  val describe: 'a Op.unboxed -> Op.t
+  val describe: 'a Op.Unboxed.t -> Op.t
 
   val define: Op.t list -> t
   (** Construct an RPC interface description from a list of declared functions *)
@@ -66,7 +68,7 @@ module type IMPL_MAKER = sig
   type t
   (** The type of implementations of functions from type 'a to 'a *)
 
-  val implement: 'a Op.unboxed -> 'a -> Op.boxed_mi
+  val implement: 'a Op.Unboxed.t -> 'a -> Op.boxed_mi
 
   val define: Op.boxed_mi list -> t
   (** Construct an RPC implementation from a list of pairs of operations and
