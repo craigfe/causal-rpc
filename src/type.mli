@@ -1,5 +1,6 @@
 module Boxed : sig
   type t =
+    | List of t list
     | Unit of unit
     | Bool of bool
     | Char of char
@@ -18,6 +19,7 @@ val char: char t
 val int32: int32 t
 val int64: int64 t
 val string: string t
+val list: 'a t -> 'a list t
 
 val to_boxed: 'a t -> 'a -> Boxed.t
 val from_boxed: 'a t -> Boxed.t -> 'a

@@ -1,5 +1,6 @@
 module Boxed = struct
   type t =
+    | List of t list
     | Unit of unit
     | Bool of bool
     | Char of char
@@ -8,7 +9,8 @@ module Boxed = struct
     | String of string
 
   let irmin_t = let open Irmin.Type in
-    variant "irmin_t" (fun unit bool char int32 int64 string -> function
+    mu (fun x -> variant "irmin_t" (fun list unit bool char int32 int64 string -> function
+        | List l -> list l
         | Unit u -> unit u
         | Bool b -> bool b
         | Char c -> char c
@@ -16,15 +18,17 @@ module Boxed = struct
         | Int64 i -> int64 i
         | String s -> string s
       )
+  |~ case1 "List" (Irmin.Type.list x) (fun l -> List l)
   |~ case1 "Unit" Irmin.Type.unit (fun u -> Unit u)
   |~ case1 "Bool" Irmin.Type.bool (fun b -> Bool b)
   |~ case1 "Char" Irmin.Type.char (fun c -> Char c)
   |~ case1 "Int32" Irmin.Type.int32 (fun i -> Int32 i)
   |~ case1 "Int64" Irmin.Type.int64 (fun i -> Int64 i)
   |~ case1 "String" Irmin.Type.string (fun u -> String u)
-  |> sealv
+  |> sealv)
 
-  let equal a b = match (a, b) with
+  let rec equal a b = match (a, b) with
+    | List l1, List l2 -> List.fold_right (&&) (List.map2 equal l1 l2) true
     | Unit (), Unit () -> true
     | Bool b1, Bool b2 -> (b1 == b2)
     | Char c1, Char c2 -> (c1 == c2)
@@ -34,12 +38,13 @@ module Boxed = struct
     | _ -> false
 
   let pp ppf v = match v with
-      | Unit () -> Fmt.pf ppf "Unit ()"
-      | Bool b -> Fmt.pf ppf "Bool %b" b
-      | Char c -> Fmt.pf ppf "Char %c" c
-      | Int32 i -> Fmt.pf ppf "Int32 %ld" i
-      | Int64 i -> Fmt.pf ppf "Int64 %Ld" i
-      | String s -> Fmt.pf ppf "String %s" s
+    | List _ -> Fmt.pf ppf "List" (* TODO: implement pretty printing properly *)
+    | Unit () -> Fmt.pf ppf "Unit ()"
+    | Bool b -> Fmt.pf ppf "Bool %b" b
+    | Char c -> Fmt.pf ppf "Char %c" c
+    | Int32 i -> Fmt.pf ppf "Int32 %ld" i
+    | Int64 i -> Fmt.pf ppf "Int64 %Ld" i
+    | String s -> Fmt.pf ppf "String %s" s
 
   let test_t = Alcotest.testable pp equal
 end
@@ -54,18 +59,22 @@ type (_, _) eq = Eq: ('a, 'a) eq
 type 'a equal = 'a -> 'a -> bool
 
 (* The primitive types *)
+type 'a prim =
+  | Unit   : unit prim
+  | Bool   : bool prim
+  | Char   : char prim
+  | Int32  : int32 prim
+  | Int64  : int64 prim
+  | String : string prim
+
 type 'a t =
-  | Unit   : unit t
-  | Bool   : bool t
-  | Char   : char t
-  | Int32  : int32 t
-  | Int64  : int64 t
-  | String : string t
+  | Prim : 'a prim -> 'a t
+  | List : 'a t -> 'a list t
 
 (* Define a reflexivity relation on types *)
 module Refl = struct
 
-  let t: type a b. a t -> b t -> (a, b) eq option = fun a b ->
+  let prim: type a b. a prim -> b prim -> (a, b) eq option = fun a b ->
     match a, b with
     | Unit  , Unit   -> Some Eq
     | Bool  , Bool   -> Some Eq
@@ -75,16 +84,26 @@ module Refl = struct
     | String, String -> Some Eq
     | _ -> None
 
+  let rec t: type a b. a t -> b t -> (a, b) eq option = fun a b ->
+    match a, b with
+    | Prim p , Prim q  -> prim p q
+    | List l1, List l2 -> (match t l1 l2 with
+      | Some Eq -> Some Eq
+      | None -> None)
+    | _, _ -> None
+
 end
 
-let unit   = Unit
-let bool   = Bool
-let char   = Char
-let int32  = Int32
-let int64  = Int64
-let string = String
+let unit   = Prim Unit
+let bool   = Prim Bool
+let char   = Prim Char
+let int32  = Prim Int32
+let int64  = Prim Int64
+let string = Prim String
+let list t = List t
 
-let to_boxed: type a. a t -> a -> Boxed.t = function
+exception Type_error
+let prim_to_boxed: type a. a prim -> a -> Boxed.t = function
   | Unit -> (fun u -> Boxed.Unit u)
   | Bool -> (fun b -> Boxed.Bool b)
   | Char -> (fun c -> Boxed.Char c)
@@ -92,8 +111,11 @@ let to_boxed: type a. a t -> a -> Boxed.t = function
   | Int64 -> (fun i -> Boxed.Int64 i)
   | String -> (fun s -> Boxed.String s)
 
-exception Type_error
-let from_boxed: type a. a t -> Boxed.t -> a = fun a b ->
+let rec to_boxed: type a. a t -> a -> Boxed.t = function
+  | Prim p -> prim_to_boxed p
+  | List elt -> (fun l -> Boxed.List (List.map (to_boxed elt) l))
+
+let prim_from_boxed: type a. a prim -> Boxed.t -> a = fun a b ->
   match (a, b) with
   | (Unit, Boxed.Unit u) -> u
   | (Bool, Boxed.Bool b) -> b
@@ -103,21 +125,37 @@ let from_boxed: type a. a t -> Boxed.t -> a = fun a b ->
   | (String, Boxed.String s) -> s
   | _ -> raise Type_error
 
-let to_irmin_type: type a. a t -> a Irmin.Type.t = function
-  | Unit   -> Irmin.Type.unit
-  | Bool   -> Irmin.Type.bool
-  | Char   -> Irmin.Type.char
-  | Int32  -> Irmin.Type.int32
-  | Int64  -> Irmin.Type.int64
-  | String -> Irmin.Type.string
+let rec from_boxed: type a. a t -> Boxed.t -> a = fun a b ->
+  match (a, b) with
+  | (Prim p_typ, p) -> prim_from_boxed p_typ p
+  | (List elt, List l) -> List.map (from_boxed elt) l
+  | _ -> raise Type_error
 
-let to_testable: type a. a t -> a Alcotest.testable = function
-  | Unit   -> Alcotest.unit
-  | Bool   -> Alcotest.bool
-  | Char   -> Alcotest.char
-  | Int32  -> Alcotest.int32
-  | Int64  -> Alcotest.int64
-  | String -> Alcotest.string
+let prim_to_irmin_type: type a. a prim -> a Irmin.Type.t =
+  let open Irmin.Type in function
+  | Unit   -> unit
+  | Bool   -> bool
+  | Char   -> char
+  | Int32  -> int32
+  | Int64  -> int64
+  | String -> string
+
+let rec to_irmin_type: type a. a t -> a Irmin.Type.t = function
+  | Prim p -> prim_to_irmin_type p
+  | List elt -> Irmin.Type.list (to_irmin_type elt)
+
+let prim_to_testable: type a. a prim -> a Alcotest.testable =
+  let open Alcotest in function
+    | Unit   -> unit
+    | Bool   -> bool
+    | Char   -> char
+    | Int32  -> int32
+    | Int64  -> int64
+    | String -> string
+
+let rec to_testable: type a. a t -> a Alcotest.testable = function
+  | Prim p -> prim_to_testable p
+  | List elt -> Alcotest.list (to_testable elt)
 
 module Equal = struct
   let unit _ _ = true
@@ -126,14 +164,19 @@ module Equal = struct
   let int32 (x:int32) (y:int32) = x = y
   let int64 (x:int64) (y:int64) = x = y
   let string x y = x == y || String.equal x y
+  let list e x y = x == y || (List.length x = List.length y && List.for_all2 e x y)
 
-  let t: type a. a t -> a equal = function
+  let prim: type a. a prim -> a equal = function
     | Unit   -> unit
     | Bool   -> bool
     | Char   -> char
     | Int32  -> int32
     | Int64  -> int64
     | String -> string
+
+  let rec t: type a. a t -> a equal = function
+    | Prim p    -> prim p
+    | List l    -> list (t l)
 end
 
 let refl = Refl.t
