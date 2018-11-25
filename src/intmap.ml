@@ -25,7 +25,8 @@ module O = Interface.MakeOperation(Int)
 open O
 
 let increment_op = declare "increment" return
-let multiply_op = declare "multiply" (() --> return)
+let multiply_op = declare "multiply" Type.(int64 @-> return)
+let complex_op = declare "complex" Type.(int32 @-> int64 @-> string @-> unit @-> return)
 
 module Definition = struct
   module Val = Int
@@ -35,11 +36,13 @@ module Definition = struct
   (* TODO: remove. This shouldn't be necessary*)
   let increment_op = increment_op
   let multiply_op = multiply_op
+  let complex_op = complex_op
 
 
   let api = define [
       describe increment_op;
-      describe multiply_op
+      describe complex_op; (* Note: the order of definition doesn't matter *)
+      describe multiply_op;
     ]
 end
 
@@ -56,7 +59,8 @@ module Implementation: Interface.IMPL with type Val.t = int64 = struct
 
   let api = define [
       implement increment_op increment;
-      implement multiply_op multiply
+      implement multiply_op multiply;
+      implement complex_op complex
     ]
 end
 

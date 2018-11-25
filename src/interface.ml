@@ -1,12 +1,10 @@
-open Type
-
 type (_,_) func_type =
   | BaseType : ('a, 'a -> 'a) func_type
-  | ParamType : (unit * ('a, 'b) func_type) -> ('a, (Param.t -> 'b)) func_type
+  | ParamType : ('t Type.t * ('a, 'b) func_type) -> ('a, ('t -> 'b)) func_type
 
 type (_,_) params_gadt =
   | Unit : ('v, 'v -> 'v) params_gadt
-  | Param : (Param.t * ('v,'a) params_gadt) -> ('v, Param.t -> 'a) params_gadt
+  | Param : ('p Type.t * 'p * ('v,'a) params_gadt) -> ('v, 'p -> 'a) params_gadt
 
 module type OPERATION = sig
   module Val: Irmin.Contents.S

@@ -5,7 +5,7 @@ exception Empty_queue
     on which to perform the operation *)
 type task = {
   name: string;
-  params: Type.Param.t list;
+  params: Type.Boxed.t list;
   key: string;
 }
 

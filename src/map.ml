@@ -4,7 +4,7 @@ exception Empty_queue
 
 type task = {
   name: string;
-  params: Type.Param.t list;
+  params: Type.Boxed.t list;
   key: string;
 }
 
@@ -12,7 +12,7 @@ let task =
   let open Irmin.Type in
   record "task" (fun name params key -> { name; params; key })
   |+ field "name" string (fun t -> t.name)
-  |+ field "params" (list Type.Param.irmin_t) (fun t -> t.params)
+  |+ field "params" (list Type.Boxed.irmin_t) (fun t -> t.params)
   |+ field "key" string (fun t -> t.key)
   |> sealr
 
@@ -242,13 +242,12 @@ module Make
   let job_queue_is_empty m =
     Lwt_main.run (JobQueue.Impl.is_empty m)
 
-  let rec flatten_params: type a. a params -> Type.Param.t list = fun ps ->
+  let rec flatten_params: type a. a params -> Type.Boxed.t list = fun ps ->
     match ps with
     | Interface.Unit -> []
-    | Interface.Param (p, ps) -> (p::flatten_params(ps))
+    | Interface.Param (typ, p, ps) -> ((Type.to_boxed typ p)::flatten_params(ps))
 
   let generate_task_queue: type a. a Operation.Unboxed.t -> a params -> t -> (value, queue) contents = fun operation params map ->
-
     let name = Operation.Unboxed.name operation in
     let param_list = flatten_params params in
 

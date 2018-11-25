@@ -19,7 +19,7 @@ let test () =
           List.map (fun ({name;params;key}:Map.task) -> (name, (params, key))) s
           |> Alcotest.(check (list (pair
                                       Alcotest.pass (* TODO: implement Operation testable *)
-                                  (pair (list Type.Param.test_t) string)
+                                  (pair (list Type.Boxed.test_t) string)
                                )))
             "Task queues are generated in the expected format"
             ["", ([],"a")]
