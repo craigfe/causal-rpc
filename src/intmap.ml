@@ -24,7 +24,6 @@ end
 module O = Interface.MakeOperation(Int)
 open O
 
-let double_op = declare "double" return
 let increment_op = declare "increment" return
 let multiply_op = declare "multiply" (() --> return)
 
@@ -34,13 +33,11 @@ module Definition = struct
   open I
 
   (* TODO: remove. This shouldn't be necessary*)
-  let double_op = double_op
   let increment_op = increment_op
   let multiply_op = multiply_op
 
 
   let api = define [
-      describe double_op;
       describe increment_op;
       describe multiply_op
     ]
@@ -52,15 +49,13 @@ module Implementation: Interface.IMPL with type Val.t = int64 = struct
   open I
 
   let increment = Int64.add Int64.one
-  let double = Int64.mul (Int64.of_int 2)
-
-  let multiply x = match x with
-    | Type.Param.Int64 i -> Int64.mul i
-    | _ -> invalid_arg "Wrong argument type"
+  let multiply = Int64.mul
+  let complex i32 i64 s () = match Int64.of_string_opt s with
+    | Some i -> Int64.mul (Int64.mul (Int64.mul (Int64.of_int32 i32) i64) i)
+    | None -> Int64.mul Int64.minus_one
 
   let api = define [
       implement increment_op increment;
-      implement double_op double;
       implement multiply_op multiply
     ]
 end
