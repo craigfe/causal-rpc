@@ -1,13 +1,5 @@
 module Boxed : sig
-  type t =
-    | List of t list
-    | Unit of unit
-    | Bool of bool
-    | Char of char
-    | Int32 of int32
-    | Int64 of int64
-    | String of string
-
+  type t
   val irmin_t: t Irmin.Type.t
   val test_t: t Alcotest.testable
 end
