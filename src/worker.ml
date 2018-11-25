@@ -92,7 +92,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
               | _ -> invalid_arg "Too many parameters")
 
           | Interface.ParamType (typ, nested_type) -> (match params with
-            | (x::xs) -> aux nested_type (func (Type.from_boxed typ x)) xs
+            | (x::xs) -> aux nested_type (func (Type.Boxed.unbox typ x)) xs
             | [] -> invalid_arg "Not enough parameters")
 
       in aux func_type func params

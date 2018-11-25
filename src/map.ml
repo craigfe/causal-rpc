@@ -245,7 +245,7 @@ module Make
   let rec flatten_params: type a. a params -> Type.Boxed.t list = fun ps ->
     match ps with
     | Interface.Unit -> []
-    | Interface.Param (typ, p, ps) -> ((Type.to_boxed typ p)::flatten_params(ps))
+    | Interface.Param (typ, p, ps) -> ((Type.Boxed.box typ p)::flatten_params(ps))
 
   let generate_task_queue: type a. a Operation.Unboxed.t -> a params -> t -> (value, queue) contents = fun operation params map ->
     let name = Operation.Unboxed.name operation in
