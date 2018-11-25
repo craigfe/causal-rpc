@@ -33,13 +33,30 @@ let monomorphic_pattern_large () =
   in
   List.iter [ A; B; C; D ] ~f:(fun v -> ignore(test v))
 
+let nrepeat func n () =
+  for _ = 1 to n do func () done
+
 let tests = [
-  "Polymorphic pattern", polymorphic_pattern;
-  "Monomorphic larger pattern", monomorphic_pattern_large;
-  "Monomorphic small pattern", monomorphic_pattern_small;
+  "Polymorphic_pattern",
+  (fun len -> Staged.stage (nrepeat polymorphic_pattern len));
+
+  "Monomorphic_larger_pattern",
+  (fun len -> Staged.stage (nrepeat monomorphic_pattern_large len));
+
+  "Monomorphic_small_pattern",
+  (fun len -> Staged.stage (nrepeat monomorphic_pattern_small len));
 ]
 
+let batch_sizes =
+  let res = ref [] in
+  let count = ref 1_000_000 in
+  while !count >= 1  do
+    res := (!count :: !res);
+    count := !count / 2
+  done;
+  !res
+
 let () =
-  List.map tests ~f:(fun (name,test) -> Bench.Test.create ~name test)
+  List.map tests ~f:(fun (name,test) -> Bench.Test.create_indexed ~name ~args:batch_sizes test)
   |> Bench.make_command
   |> Command.run
