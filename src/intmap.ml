@@ -33,12 +33,6 @@ module Definition = struct
   module I = Interface.Description(Int)
   open I
 
-  (* TODO: remove. This shouldn't be necessary*)
-  let increment_op = increment_op
-  let multiply_op = multiply_op
-  let complex_op = complex_op
-
-
   let api = define [
       describe increment_op;
       describe complex_op; (* Note: the order of definition doesn't matter *)

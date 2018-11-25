@@ -8,13 +8,13 @@ let test () =
     let root = "/tmp/irmin/increment/" in
 
     IntMap.empty ~directory:(root ^ "test-0001") ()
-    |> IntMap.map Definition.increment_op Interface.Unit
+    |> IntMap.map increment_op Interface.Unit
     |> fun _ -> Alcotest.(check pass "Calling map on an empty Map terminates" () ());
 
     Alcotest.check_raises "Calling map on a non-empty Map without a worker causes a timeout" Map.Timeout
     (fun () -> ignore (IntMap.empty ~directory:(root ^ "test-0002") ()
     |> IntMap.add "timeout" (Int64.of_int 1)
-    |> IntMap.map ~timeout:epsilon_float Definition.increment_op Interface.Unit));
+    |> IntMap.map ~timeout:epsilon_float increment_op Interface.Unit));
 
     (* let worker = IntWorker.run ~dir:"/tmp/irmin/increment-worker/test-0001"
      *   ~client:"file:///tmp/irmin/incrmeent/test-0001" () in *)
