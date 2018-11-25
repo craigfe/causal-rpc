@@ -24,7 +24,7 @@ module type OPERATION = sig
   type boxed_mi = | E: 'a matched_implementation -> boxed_mi
 
   val return: ('a, 'a -> 'a) func_type
-  val (-->): unit -> ('a, 'b) func_type -> ('a, Param.t -> 'b) func_type
+  val (@->): 'p Type.t -> ('a, 'b) func_type -> ('a, 'p -> 'b) func_type
   val declare: string -> (Val.t, 'b) func_type -> 'b Unboxed.t
 
   val compare: t -> t -> int
@@ -50,7 +50,7 @@ module MakeOperation(T: Irmin.Contents.S): OPERATION with module Val = T = struc
 
 
   let return = BaseType
-  let (-->) p f = ParamType (p, f)
+  let (@->) p f = ParamType (p, f)
 
   let declare name typ: 'a Unboxed.t = {name; typ}
 

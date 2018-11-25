@@ -31,7 +31,7 @@ module type OPERATION = sig
 
   val return: ('a, 'a -> 'a) func_type
 
-  val (-->): unit -> ('a, 'b) func_type -> ('a, Param.t -> 'b) func_type
+  val (@->): 'p Type.t -> ('a, 'b) func_type -> ('a, 'p -> 'b) func_type
 
   val declare: string -> (Val.t, 'b) func_type -> 'b Unboxed.t
   (** Declare a function with a name and a number of arguments *)
