@@ -3,13 +3,6 @@ module Int: Irmin.Contents.S with type t = int64 = struct
   type t = int64
   let t = Irmin.Type.int64
 
-  let pp fmt = Format.fprintf fmt "%Ld"
-
-  let of_string s =
-    match Int64.of_string_opt s with
-    | Some i -> Ok i
-    | None -> Error (`Msg "invalid counter value")
-
   let merge ~old a b =
     let open Irmin.Merge.Infix in
     old () >|=* fun old ->
@@ -60,7 +53,6 @@ end
 
 module IntMap = Map.Make
     (Definition)
-    (Irmin_unix.Git.FS.KV)
     (Job_queue.Type)
     (Job_queue.Make)
 

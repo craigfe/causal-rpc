@@ -12,7 +12,14 @@ end
 
 module Make
     (Val: Irmin.Contents.S)
-    (St: Irmin.KV with type contents = (Val.t, Type.t) Map.contents): Map.JOB_QUEUE with module Store = St = struct
+    (St: Irmin_unix.Git.S
+        with type key = Irmin.Path.String_list.t
+         and type step = string
+         and module Key = Irmin.Path.String_list
+         and type contents = (Val.t, Type.t) Map.contents
+         and type branch = string
+         and module Git = Irmin_unix.Git.FS.G)
+  : Map.JOB_QUEUE with module Store = St = struct
 
   type t = string list
   type job = string
@@ -49,6 +56,9 @@ module Make
       of_map m
       >>= fun js -> Store.set m ~info:(Irmin_unix.info ~author:"map" "Issuing map")
         ["job_queue"] (Job_queue (j::js))
+      >|= fun res -> match res with
+      | Ok () -> ()
+      | Error _ -> invalid_arg "some error"
 
     (* TODO: make sure the right job is popped *)
     let pop m = (* TODO: make this atomic *)
@@ -57,7 +67,9 @@ module Make
       | (j::js) ->
         Store.set m ~info:(Irmin_unix.info ~author:"map" "Completed map")
                      ["job_queue"] (Job_queue js)
-        >|= fun () -> j
+        >|= fun res -> (match res with
+        | Ok () -> j
+        | Error _ -> invalid_arg "some error")
       | [] -> raise Empty_queue
 
     let peek_opt m =

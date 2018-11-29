@@ -43,7 +43,9 @@ let run ?(name=random_server_name ()) port =
   Store.Repo.v config
   >>= Store.master
   >>= fun t -> Store.set t ~info:(info name "Initial commit") [".init"] (Printf.sprintf "[%s] : port %d" (Misc.timestamp ()) port)
-  >>= fun () -> Store.watch t callback
+  >>= fun res -> (match res with
+  | Ok () -> Store.watch t callback
+  | Error _ -> invalid_arg "some error")
 
   (* Commit a few things to the repository *)
   >>= fun w -> commit t name 1
@@ -52,7 +54,7 @@ let run ?(name=random_server_name ()) port =
    * >>= fun () -> commit t name 4
    * >>= fun () -> commit t name 5 *)
 
-  >>= fun () -> Unix.sleep 10000; Store.unwatch w
+  >>= fun _ -> Unix.sleep 10000; Store.unwatch w
 
 let main name port =
   Lwt_main.run (run ?name port)

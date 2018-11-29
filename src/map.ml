@@ -71,12 +71,6 @@ module MakeContents (Val: Irmin.Contents.S) (JQueueType: QUEUE_TYPE): Irmin.Cont
     |~ case1 "Job_queue" JQueueType.t (fun js -> Job_queue js)
     |> sealv
 
-  let pp = Irmin.Type.pp_json t
-
-  let of_string s =
-    let decoder = Jsonm.decoder (`String s) in
-    Irmin.Type.decode_json t decoder
-
   let merge = Irmin.Merge.(option (idempotent t))
 end
 
@@ -93,7 +87,13 @@ module type S = sig
   type t
 
   module Contents: Irmin.Contents.S with type t = (Value.t, queue) contents
-  module Store: Irmin.KV with type contents = Contents.t
+  module Store: Irmin_unix.Git.S
+    with type key = Irmin.Path.String_list.t
+     and type step = string
+     and module Key = Irmin.Path.String_list
+     and type contents = Contents.t
+     and type branch = string
+     and module Git = Irmin_unix.Git.FS.G
   module Sync: Irmin.SYNC with type db = Store.t
   module JobQueue: JOB_QUEUE with module Store = Store
   module Operation: Interface.OPERATION with module Val = Value
@@ -121,11 +121,16 @@ end
 
 module Make
     (Desc: Interface.DESC)
-    (Kv_maker: Irmin_git.KV_MAKER)
     (QueueType: QUEUE_TYPE)
     (JQueueMake: functor
        (Val: Irmin.Contents.S)
-       (St: Irmin.KV with type contents = (Val.t, QueueType.t) contents)
+       (St: Irmin_unix.Git.S
+        with type key = Irmin.Path.String_list.t
+         and type step = string
+         and module Key = Irmin.Path.String_list
+         and type contents = (Val.t, QueueType.t) contents
+         and type branch = string
+         and module Git = Irmin_unix.Git.FS.G)
        -> (JOB_QUEUE with module Store = St)
     ): S
   with module Value = Desc.Val
@@ -134,7 +139,7 @@ module Make
 
   module Value = Desc.Val
   module Contents = MakeContents(Desc.Val)(QueueType)
-  module Store = Kv_maker(Contents)
+  module Store = Irmin_unix.Git.FS.KV(Contents)
   module Sync = Irmin.Sync(Store)
   module JobQueue = JQueueMake(Desc.Val)(Store)
   module Operation = Interface.MakeOperation(Desc.Val)
@@ -179,6 +184,10 @@ module Make
         ~info:(Irmin_unix.info ~author:"test" "Committing to key %s" key)
         ["vals"; key]
         (Value value)
+      >|= fun res -> match res with
+      | Ok () -> ()
+      | Error _ -> invalid_arg "some error"
+
     in Lwt_main.run lwt; m
 
   let find key m =

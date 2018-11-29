@@ -1,5 +1,6 @@
 (test
 	(name test)
 	(libraries
+    digestif.c
 		alcotest
 		trace_rpc))

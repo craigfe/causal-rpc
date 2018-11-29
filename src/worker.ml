@@ -32,9 +32,8 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
         >>= fun repo -> Store.of_branch repo branch
         >|= Irmin.remote_store (module Store)
       in Lwt_main.run lwt
-
     else
-      Irmin.remote_uri uri
+      Store.remote uri
 
   let random_name () =
     Misc.generate_rand_string ~length:8 ()
@@ -54,7 +53,10 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
         ~info:(Irmin_unix.info ~author:"map" "Consuming task")
         ["task_queue"]
         (Task_queue (xs, x::pending))
-      >>= fun () -> Sync.push_exn local_br remote
+      >>= fun res -> (match res with
+      | Ok () -> Sync.push_exn local_br remote
+      | Error _ -> invalid_arg "some error")
+
       >|= fun () -> Some x
 
     | Some Task_queue ([], _) -> Lwt.return None (* All tasks are pending *)
@@ -68,6 +70,9 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
         | Task_queue (todo, pending) -> Map.Task_queue (todo, List.filter (fun t -> t <> task) pending)
         | _ -> invalid_arg "Can't happen by design")
     >>= Store.set m ~info:(Irmin_unix.info ~author:"map" "Completed task") ["task_queue"]
+    >|= fun res -> (match res with
+    | Ok () -> ()
+    | Error _ -> invalid_arg "some error")
 
   (* We have a function of type (param -> ... -> param -> val -> val).
      Here we take the parameters that were passed as part of the RPC and recursively apply them

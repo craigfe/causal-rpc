@@ -3,6 +3,7 @@
 	(public_name trace_rpc)
 	(libraries
     alcotest
+    digestif.c
 		cmdliner
 		fmt.cli
 		fmt.tty
