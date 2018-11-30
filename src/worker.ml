@@ -123,17 +123,19 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     (* Attempt to take a task from the queue *)
     >>= fun map -> get_task_opt local_br remote
     >>= (fun task -> match task with
-        | None -> Lwt.return_unit (* No work to perform. We are done *)
         | Some t -> begin
             ignore (perform_task map t);
+            Logs.info (fun m -> m "Completed task. Removing from pending queue");
             remove_pending_task t local_br
+            >|= (fun () -> Logs.info (fun m -> m "Removed task from pending queue"))
+            >>= fun _ -> Sync.push_exn local_br remote
+            >|= fun _ -> Logs.info (fun m -> m "Changes pushed to branch %s" br_name)
+          end
+
+        | None -> begin
+            Logs.info (fun m -> m "No pending tasks in the task queue.");
+            Lwt.return_unit
           end)
-
-    >|= (fun _ -> Logs.info (fun m -> m "Completed operation. Pushing changes to branch %s" br_name))
-
-    (* Push the changes *)
-    >>= (fun _ -> Sync.push_exn local_br remote)
-    >|= (fun _ -> Logs.info (fun m -> m "Changes pushed to branch %s" br_name))
 
   let run
       ?(name=random_name())
