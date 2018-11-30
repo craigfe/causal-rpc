@@ -110,7 +110,7 @@ module type S = sig
   val empty: ?directory:string -> unit -> t
   val is_empty: t -> bool
   val mem: key -> t -> bool
-  val add: key -> Value.t -> t -> t
+  val add: ?message:string -> key -> Value.t -> t -> t
   val find: key -> t -> Value.t
   val remove: key -> t -> t
   val size: t -> int
@@ -178,10 +178,14 @@ module Make
       >|= List.exists (fun (x,_) -> x = key)
     in Lwt_main.run lwt
 
-  let add key value m =
+  let add ?message key value m =
+    let message = (match message with
+      | Some m -> m
+      | None -> Printf.sprintf "Committing to key %s" key) in
+
     let lwt =
       Store.set m
-        ~info:(Irmin_unix.info ~author:"test" "Committing to key %s" key)
+        ~info:(Irmin_unix.info ~author:"test" "%s" message)
         ["vals"; key]
         (Value value)
       >|= fun res -> match res with

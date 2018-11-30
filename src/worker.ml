@@ -109,7 +109,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
       | None -> invalid_arg "Operation not found") in
 
     let new_val = (pass_params boxed_mi task.params) old_val in
-    add task.key new_val map
+    add ~message:("Performed task on key " ^ task.key) task.key new_val map
 
   let handle_request store client job =
 

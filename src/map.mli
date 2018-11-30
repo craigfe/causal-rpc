@@ -99,7 +99,7 @@ module type S = sig
   val mem: key -> t -> bool
   (** [mem x m] returns true iff [m] contains a binding for [x] *)
 
-  val add: key -> Value.t -> t -> t
+  val add: ?message:string -> key -> Value.t -> t -> t
   (** [add x y m] returns a map containing the same bindings as [m],
       plus a binding of [x] to [y]. If [x] was already bound in [m],
       its previous binding is replaced. *)
