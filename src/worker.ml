@@ -4,9 +4,9 @@ module type W = sig
   open Map
 
   include Map.S
-  val get_task_opt: Sync.db -> Irmin.remote -> task option Lwt.t
+  val get_task_opt: Sync.db -> Irmin.remote -> string -> task option Lwt.t
   val perform_task: t -> task -> t
-  val handle_request: Store.repo -> string -> JobQueue.job -> unit Lwt.t
+  val handle_request: Store.repo -> string -> JobQueue.job -> string -> unit Lwt.t
 
   val run: ?name:string -> ?dir:string -> client:string -> unit -> unit Lwt.t
 end
@@ -45,12 +45,12 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     Logs.info (fun m -> m "No directory supplied. Using default directory %s" dir);
     dir
 
-  let get_task_opt local_br remote =
+  let get_task_opt local_br remote worker_name =
     Store.find local_br ["task_queue"]
     >>= fun q -> match q with
     | Some Task_queue ((x::xs), pending) ->
       Store.set local_br
-        ~info:(Irmin_unix.info ~author:"map" "Consuming task")
+        ~info:(Irmin_unix.info ~author:"map" "%s consuming task on key %s" worker_name x.key)
         ["task_queue"]
         (Task_queue (xs, x::pending))
       >>= fun res -> (match res with
@@ -64,12 +64,14 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     | Some _ -> invalid_arg "Can't happen by design"
 
   (* TODO: do this as part of a transaction *)
-  let remove_pending_task task m =
-    Store.get m ["task_queue"]
+  let remove_pending_task task local_br worker_name =
+    Store.get local_br ["task_queue"]
     >|= (fun q -> match q with
         | Task_queue (todo, pending) -> Map.Task_queue (todo, List.filter (fun t -> t <> task) pending)
         | _ -> invalid_arg "Can't happen by design")
-    >>= Store.set m ~info:(Irmin_unix.info ~author:"map" "Completed task") ["task_queue"]
+    >>= Store.set local_br
+      ~info:(Irmin_unix.info ~author:"map" "%s completed pending task" worker_name)
+      ["task_queue"]
     >|= fun res -> (match res with
     | Ok () -> ()
     | Error _ -> invalid_arg "some error")
@@ -103,6 +105,8 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
       in aux func_type func params
 
   let perform_task map (task:Map.task) =
+    Logs.info (fun m -> m "Performing the task");
+
     let old_val = find task.key map in
     let boxed_mi = (match I.find_operation_opt task.name Impl.api with
       | Some operation -> operation
@@ -111,25 +115,26 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     let new_val = (pass_params boxed_mi task.params) old_val in
     add ~message:("Performed task on key " ^ task.key) task.key new_val map
 
-  let handle_request store client job =
+  let handle_request repo client job worker_name =
 
     (* Checkout the branch *)
     let br_name = JobQueue.Impl.job_to_string job in
     let remote = upstream client br_name in
-    Store.of_branch store br_name
+    let simp_log msg = Lwt.wrap (fun () -> Logs.info (fun m -> m msg)) in
+
+    Store.of_branch repo br_name
     >>= fun local_br -> Sync.pull_exn local_br remote `Set
-    >|= (fun () -> M.of_store local_br)
 
     (* Attempt to take a task from the queue *)
-    >>= fun map -> get_task_opt local_br remote
+    >>= fun () -> get_task_opt local_br remote worker_name
     >>= (fun task -> match task with
         | Some t -> begin
-            ignore (perform_task map t);
-            Logs.info (fun m -> m "Completed task. Removing from pending queue");
-            remove_pending_task t local_br
-            >|= (fun () -> Logs.info (fun m -> m "Removed task from pending queue"))
+            Lwt.wrap (fun () -> perform_task (of_store local_br) t)
+            >>= fun _ -> simp_log "Completed task. Removing from pending queue"
+            >>= fun () -> remove_pending_task t local_br worker_name
+            >>= fun () -> simp_log "Removed task from pending queue"
             >>= fun _ -> Sync.push_exn local_br remote
-            >|= fun _ -> Logs.info (fun m -> m "Changes pushed to branch %s" br_name)
+            >|= fun () -> Logs.info (fun m -> m "Changes pushed to branch %s" br_name)
           end
 
         | None -> begin
@@ -150,9 +155,8 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
     Store.Repo.v config
     >>= fun s -> Store.master s
-    >>= fun master -> Sync.pull_exn master upstr `Set
 
-    >|= fun _ -> while true do
+    >|= fun master -> while true do
       let lwt =
 
         (* Pull and check the map_request file for queued jobs *)
@@ -163,11 +167,16 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
         (* A map request has been issued *)
         | Some br_name ->
 
-          Logs.app (fun m -> m "Detected a map request on branch %s" (JobQueue.Impl.job_to_string br_name));
-          handle_request s client br_name
+          Lwt.wrap (fun () -> Logs.info (fun m -> m "Detected a map request on branch %s"
+                                            (JobQueue.Impl.job_to_string br_name)))
+
+          >>= fun () -> handle_request s client br_name name
+          >|= fun () -> Logs.info (fun m -> m "Finished handling request on branch %s"
+                                      (JobQueue.Impl.job_to_string br_name))
+
 
         | None ->
-          Logs.debug (fun m -> m "Found no map request. Sleeping for %d seconds." poll_frequency);
+          Logs.info (fun m -> m "Found no map request. Sleeping for %d seconds." poll_frequency);
           Unix.sleep poll_frequency;
           Lwt.return_unit
 

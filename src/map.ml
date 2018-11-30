@@ -107,6 +107,8 @@ module type S = sig
   (* ------------------------- *)
 
   val of_store: Sync.db -> t
+  val to_store: t -> Sync.db
+
   val empty: ?directory:string -> unit -> t
   val is_empty: t -> bool
   val mem: key -> t -> bool
@@ -170,6 +172,7 @@ module Make
     end
 
   let of_store s = s
+  let to_store s = s
 
   let mem key m =
     let lwt =
@@ -311,24 +314,27 @@ module Make
       >>= fun _ -> Store.watch branch reset_count
       >>= fun watch ->
 
-            while not(task_queue_is_empty branch) && (!inactivity_count < 8) do
-              Unix.sleepf (timeout /. 8.0);
-              inactivity_count := !inactivity_count + 1;
-            done;
+      Logs.app (fun m -> m "Waiting for the task queue to be empty, with timeout %f" timeout);
+      while not(task_queue_is_empty branch) && (!inactivity_count < 8) do
+        Logs.app (fun m -> m "Sleeping for a time of %f" (timeout /. 8.0));
+        Unix.sleepf (timeout /. 8.0);
+        inactivity_count := !inactivity_count + 1;
+      done;
 
-            if !inactivity_count >= 8 then
-              Lwt.fail Timeout
-            else
-              Store.unwatch watch
+      if !inactivity_count >= 8 then
+        (Logs.app (fun m -> m "Inactivity count: %d" (!inactivity_count));
+        Lwt.fail Timeout)
+      else
+        Store.unwatch watch
 
-      (* Merge the map branch into master *)
-      >>= fun _ -> Store.merge_with_branch m
-        ~info:(Irmin_unix.info ~author: "map" "Job %s complete" map_name) map_name
-      >|= (fun merge -> match merge with
-      | Ok () -> ()
-      | Error _ -> invalid_arg "merge conflict")
-      >>= fun _ -> JobQueue.Impl.pop m
-      >|= fun _ -> Logs.app (fun m -> m "Map operation complete. Branch name %s" map_name)
+        (* Merge the map branch into master *)
+        >>= fun _ -> Store.merge_with_branch m
+          ~info:(Irmin_unix.info ~author: "map" "Job %s complete" map_name) map_name
+        >|= (fun merge -> match merge with
+            | Ok () -> ()
+            | Error _ -> invalid_arg "merge conflict")
+        >>= fun _ -> JobQueue.Impl.pop m
+        >|= fun _ -> Logs.app (fun m -> m "Map operation complete. Branch name %s" map_name)
 
     in Lwt_main.run lwt; m
 

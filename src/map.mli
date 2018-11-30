@@ -90,6 +90,10 @@ module type S = sig
   val of_store: Sync.db -> t
   (** Return the map corresponding to an underlying store representation *)
 
+  val to_store: t -> Sync.db
+  (** Return the underlying store representation. TODO: remove. Nothing should need access
+      to this, but it is currently being used by the worker. *)
+
   val empty: ?directory:string -> unit -> t
   (** The empty map. *)
 
