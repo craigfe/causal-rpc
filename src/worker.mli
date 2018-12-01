@@ -16,7 +16,11 @@ module type W = sig
 
   (* --------------------------------------------------------- *)
 
-  val run: ?name:string -> ?dir:string -> client:string -> unit -> unit Lwt.t
+  val run:
+    ?name:string ->
+    ?dir:string ->
+    ?poll_freq:float ->
+    client:string -> unit -> unit Lwt.t
   (** run ~name ~dir c () returns a promise of a worker computation with a commit
       author ~name that listens for work requests from client c and performs the work
       in repository ~dir *)

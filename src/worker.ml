@@ -8,7 +8,11 @@ module type W = sig
   val perform_task: t -> task -> t
   val handle_request: Store.repo -> string -> JobQueue.job -> string -> unit Lwt.t
 
-  val run: ?name:string -> ?dir:string -> client:string -> unit -> unit Lwt.t
+  val run:
+    ?name:string ->
+    ?dir:string ->
+    ?poll_freq:float ->
+    client:string -> unit -> unit Lwt.t
 end
 
 module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = struct
@@ -145,13 +149,13 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
   let run
       ?(name=random_name())
       ?(dir=directory_from_name name)
+      ?(poll_freq = 5.0)
       ~client () =
 
     Logs.app (fun m -> m "Initialising worker with name %s for client %s" name client);
 
     let config = Irmin_git.config ~bare:false dir in
     let upstr = upstream client "master" in
-    let poll_frequency = 5 in
 
     Store.Repo.v config
     >>= fun s -> Store.master s
