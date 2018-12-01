@@ -1,3 +1,4 @@
+open Lwt.Infix
 open Trace_rpc
 
 (** Tests of the distributed increment operation on integer maps *)
@@ -18,7 +19,7 @@ let basic_tests () =
   end
 
 
-let mapfn () =
+let mapfn _ () =
   let open Intmap in begin
     Logs.set_reporter (Logs_fmt.reporter ());
     Logs.set_level (Some Logs.Info);
@@ -33,16 +34,17 @@ let mapfn () =
      * |> IntMap.find "a"
      * |> Alcotest.(check int64) "Issuing a double request on a single key" (Int64.of_int 2); *)
 
-    Lwt_main.run (Lwt.choose [
-        (* worker "test-0001"; *)
+    Lwt_preemptive.simple_init ();
 
-        (IntMap.empty ~directory:(root ^ "test-0001") ()
+    Lwt.pick [
+        worker "test-0001";
+
+        IntMap.empty ~directory:(root ^ "test-0001") ()
          |> IntMap.add "a" Int64.one
-         |> IntMap.map ~timeout:1000.0 increment_op Interface.Unit (* TODO: It shouldn't be necessary to pass the empty array here *)
-         |> IntMap.find "a"
-         |> Alcotest.(check int64) "Issuing a double request on a single key" (Int64.of_int 2); Lwt.return_unit)
-
-      ])
+         |> IntMap.map ~timeout:5.0 identity_op Interface.Unit (* TODO: It shouldn't be necessary to pass the empty array here *)
+         >|= IntMap.find "a"
+         >|= Alcotest.(check int64) "Issuing a no-op request on a single key" Int64.one
+      ]
 
     (* IntMap.empty ~directory:(root ^ "test-0003") ()
      * |> IntMap.add "a" (Int64.of_int 1)

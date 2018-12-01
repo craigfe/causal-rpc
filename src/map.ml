@@ -118,7 +118,7 @@ module type S = sig
   val size: t -> int
   val keys: t -> key list
   val values: t -> Value.t list
-  val map: ?timeout:float -> 'a Operation.Unboxed.t -> 'a params -> t -> t
+  val map: ?timeout:float -> 'a Operation.Unboxed.t -> 'a params -> t -> t Lwt.t
 end
 
 module Make

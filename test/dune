@@ -3,4 +3,5 @@
 	(libraries
     digestif.c
 		alcotest
+    alcotest-lwt
 		trace_rpc))
