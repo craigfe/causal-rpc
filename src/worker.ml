@@ -170,8 +170,16 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
     let config = Irmin_git.config ~bare:false dir in
     let upstr = upstream client "master" in
+    let src = Logs.Src.create name in
 
-    Logs_lwt.app (fun m -> m "Initialising worker with name %s for client %s" name client)
+    if String.sub dir 0 11 <> "/tmp/irmin/"
+    then invalid_arg ("Supplied directory (" ^ dir ^ ") must be in /tmp/irmin/");
+
+    (* Delete the directory if it already exists... Unsafe! *)
+    let ret_code = Sys.command ("rm -rf " ^ dir) in
+      if (ret_code <> 0) then invalid_arg "Unable to delete directory";
+
+    Logs_lwt.app ~src (fun m -> m "Initialising worker with name %s for client %s" name client)
     >>= fun () -> Store.Repo.v config
     >>= fun s -> Store.master s
 

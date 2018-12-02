@@ -165,6 +165,9 @@ module Make
   let empty ?(directory=generate_random_directory()) () =
     let config = Irmin_git.config ~bare:true directory in
 
+    if String.sub directory 0 11 <> "/tmp/irmin/"
+       then invalid_arg ("Supplied directory (" ^ directory ^ ") must be in /tmp/irmin/");
+
     (* Delete the directory if it already exists... Unsafe! *)
     let ret_code = Sys.command ("rm -rf " ^ directory) in begin
       if (ret_code <> 0) then invalid_arg "Unable to delete directory";
