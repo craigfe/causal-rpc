@@ -5,7 +5,7 @@ open Intmap
 let worker dir = IntWorker.run
     ~dir:("/tmp/irmin/test_increment/worker/" ^ dir)
     ~client:("file:///tmp/irmin/test_increment/" ^ dir)
-    ~poll_freq:0.0001 ()
+    ~poll_freq:0.01 ()
 
 let worker_pool n dir =
   let rec inner n dir =
@@ -17,7 +17,7 @@ let worker_pool n dir =
                ~poll_freq:epsilon_float ()
 
       in w :: inner (n-1) dir
-  in Lwt.pick (inner n dir)
+  in inner n dir
 
 (** Tests of the distributed increment operation on integer maps *)
 let basic_tests _ () =
@@ -144,9 +144,7 @@ let worker_pool_tests _ () =
   Lwt_preemptive.simple_init ();
   let root = "/tmp/irmin/test_increment/worker_pool/" in
 
-  Lwt.pick [
-    worker_pool 4 "worker_pool/test-0001";
-
+  Lwt.pick @@ (worker_pool 4 "worker_pool/test-0001") @ [
     IntMap.empty ~directory:(root ^ "test-0001") ()
     |> IntMap.add "a" (Int64.of_int 1)
     |> IntMap.add "b" (Int64.of_int 2)
@@ -163,8 +161,11 @@ let worker_pool_tests _ () =
 
     |> IntMap.map ~timeout:60.0 multiply_op (Interface.Param (Type.int64, Int64.of_int 10, Interface.Unit))
 
-    >|= IntMap.find "a"
-    >|= Alcotest.(check int64) "Multiply request on many keys in parallel" (Int64.of_int 10)
+    >|= IntMap.values
+    >|= List.map Int64.to_int
+    >|= List.sort compare
+    >|= Alcotest.(check (list int)) "Multiple request on many keys in parallel"
+      [10; 20; 30; 40; 50; 60; 70; 80; 90; 100; 110; 120]
   ]
 
 let tests = [
