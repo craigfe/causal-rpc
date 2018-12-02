@@ -255,6 +255,12 @@ module Make
       | _ -> false
     in Lwt_main.run lwt
 
+  let task_queue_size branch =
+    let lwt =
+      get_task_queue branch
+      >|= fun (a, b) -> (List.length a) + (List.length b)
+    in Lwt_main.run lwt
+
   let job_queue_is_empty m =
     Lwt_main.run (JobQueue.Impl.is_empty m)
 
@@ -282,62 +288,69 @@ module Make
       m ["task_queue"] q
 
 
-  let inactivity_count = ref 0
-  let reset_count diff = match diff with
-    | `Added _ -> (inactivity_count := 0; Lwt.return_unit)
-    | _ -> Lwt.return_unit
-
-  let map: type a. ?timeout:float -> a Operation.Unboxed.t -> a params -> t -> t =
+  let map: type a. ?timeout:float -> a Operation.Unboxed.t -> a params -> t -> t Lwt.t =
     fun ?(timeout=5.0) operation params m ->
 
-    let lwt =
+    (* TODO: ensure this name doesn't collide with existing branches *)
+    let map_name = "map--" ^ Misc.generate_rand_string ~length:8 () in
 
-      (* TODO: ensure this name doesn't collide with existing branches *)
-      let map_name = "map--" ^ Misc.generate_rand_string ~length:8 () in
-      Logs.app (fun m -> m "Map operation issued. Branch name %s" map_name);
+    Logs_lwt.app (fun m -> m "Map operation issued. Branch name %s" map_name)
 
-      (* Push the job to the job queue *)
-      JobQueue.Impl.push (JobQueue.Impl.job_of_string map_name) m
+    (* Push the job to the job queue *)
+    >>= fun () -> JobQueue.Impl.push (JobQueue.Impl.job_of_string map_name) m
 
-      (* Create a new branch to isolate the operation *)
-      >>= fun _ -> Store.clone ~src:m ~dst:map_name
-      >>= fun branch -> Store.merge_with_branch m
-        ~info:(Irmin_unix.info ~author:"map" "Merged") "master"
-      >|= (fun merge -> match merge with
-      | Ok () -> ()
-      | Error _ -> invalid_arg "merge conflict")
+    (* Create a new branch to isolate the operation *)
+    >>= fun _ -> Store.clone ~src:m ~dst:map_name
+    >>= fun branch -> Store.merge_with_branch m
+      ~info:(Irmin_unix.info ~author:"map" "Merged") "master"
+    >|= (fun merge -> match merge with
+        | Ok () -> ()
+        | Error _ -> invalid_arg "merge conflict")
 
-      (* Generate and commit the task queue *)
-      >>= fun () -> set_task_queue (generate_task_queue operation params m) branch
+    (* Generate and commit the task queue *)
+    >>= fun () -> set_task_queue (generate_task_queue operation params m) branch
 
-      (* Wait for the task queue to be empty *)
-      >>= fun _ -> Store.watch branch reset_count
-      >>= fun watch ->
 
-      Logs.app (fun m -> m "Waiting for the task queue to be empty, with timeout %f" timeout);
-      while not(task_queue_is_empty branch) && (!inactivity_count < 8) do
-        Logs.app (fun m -> m "Sleeping for a time of %f" (timeout /. 8.0));
-        Unix.sleepf (timeout /. 8.0);
-        inactivity_count := !inactivity_count + 1;
-      done;
+    (* Wait for the task queue to be empty *)
+    >>= fun _ ->
 
-      if !inactivity_count >= 8 then
-        (Logs.app (fun m -> m "Inactivity count: %d" (!inactivity_count));
-        Lwt.fail Timeout)
-      else
+    let inactivity_count = ref 0 in
+    let reset_count diff = match diff with
+      | `Added _ -> (inactivity_count := 0; Lwt.return_unit)
+      | _ -> Lwt.return_unit in
+
+    Store.watch branch reset_count
+
+    >>= fun watch -> Logs_lwt.app (fun m -> m "Waiting for the task queue to be empty, with timeout %f" timeout)
+    >>= fun () ->
+    let rec inner () =
+
+      if task_queue_is_empty branch then (* we are done *)
         Store.unwatch watch
 
-        (* Merge the map branch into master *)
-        >>= fun _ -> Store.merge_with_branch m
-          ~info:(Irmin_unix.info ~author: "map" "Job %s complete" map_name) map_name
-        >|= (fun merge -> match merge with
-            | Ok () -> ()
-            | Error _ -> invalid_arg "merge conflict")
-        >>= fun _ -> JobQueue.Impl.pop m
-        >|= fun _ -> Logs.app (fun m -> m "Map operation complete. Branch name %s" map_name)
+      else if !inactivity_count >= 8 then (* we have been waiting for too long *)
+        Logs_lwt.app (fun m -> m "Inactivity count: %d" (!inactivity_count))
+        >>= fun () -> Lwt.fail Timeout
 
-    in Lwt_main.run lwt; m
+      else (* we will wait for a bit *)
+        Logs_lwt.app (fun m -> m "Sleeping for a time of %f. %d tasks remaining" (timeout /. 8.0) (task_queue_size branch))
+        >>= fun () -> Lwt_unix.sleep (timeout /. 8.0)
+        >|= (fun () -> (inactivity_count := !inactivity_count + 1))
+        >>= Lwt_main.yield
+        >>= inner
 
+    in inner ()
+
+    (* Merge the map branch into master *)
+    >>= fun _ -> Store.merge_with_branch m
+      ~info:(Irmin_unix.info ~author: "map" "Job %s complete" map_name) map_name
+    >|= (fun merge -> match merge with
+        | Ok () -> ()
+        | Error _ -> invalid_arg "merge conflict")
+    >>= fun _ -> JobQueue.Impl.pop m
+    >>= fun _ -> Logs_lwt.app (fun m -> m "Map operation complete. Branch name %s" map_name)
+
+    >|= fun _ -> m
 
   let _ = Irmin_unix.set_listen_dir_hook ()
 end
