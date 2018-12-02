@@ -1,7 +1,7 @@
 (test
 	(name test)
 	(libraries
-    digestif.c
+    digestif
 		alcotest
     alcotest-lwt
 		trace_rpc))
