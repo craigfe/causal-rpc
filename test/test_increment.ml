@@ -76,28 +76,6 @@ let noop_tests _ () =
     >|= Alcotest.(check int64) "Multiple no-op requests on a single key in series" Int64.one
   ]
 
-  (* >>= fun () ->
-   * 
-   * Lwt.pick [
-   *   worker_pool 4 "noop/test-0003";
-   * 
-   *   IntMap.empty ~directory:(root ^ "test-0003") ()
-   *   |> IntMap.add "a" (Int64.of_int 1)
-   *   |> IntMap.add "b" (Int64.of_int 2)
-   *   |> IntMap.add "c" (Int64.of_int 3)
-   *   |> IntMap.add "d" (Int64.of_int 4)
-   *   (\* |> IntMap.add "e" (Int64.of_int 5)
-   *    * |> IntMap.add "f" (Int64.of_int 6)
-   *    * |> IntMap.add "g" (Int64.of_int 7)
-   *    * |> IntMap.add "h" (Int64.of_int 8) *\)
-   * 
-   *   |> IntMap.map ~timeout:5.0 identity_op Interface.Unit
-   * 
-   *   >|= IntMap.find "a"
-   *   >|= Alcotest.(check int64) "No-op request on many keys in parallel" Int64.one
-   * ] *)
-
-
 let increment_tests _ () =
   Logs.set_reporter (Logs_fmt.reporter ());
   Logs.set_level (Some Logs.Info);

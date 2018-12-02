@@ -194,7 +194,7 @@ module Make
 
     let lwt =
       Store.set m
-        ~info:(Irmin_unix.info ~author:"test" "%s" message)
+        ~info:(Irmin_unix.info ~author:"client" "%s" message)
         ["vals"; key]
         (Value value)
       >|= fun res -> match res with
