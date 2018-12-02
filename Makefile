@@ -6,6 +6,9 @@ all:
 test:
 	dune runtest -j1 --no-buffer
 
+testf:
+	dune runtest -j1 --no-buffer -f
+
 data:
 	bench/gather_data.sh
 
