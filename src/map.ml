@@ -71,7 +71,7 @@ module MakeContents (Val: Irmin.Contents.S) (JQueueType: QUEUE_TYPE): Irmin.Cont
     |~ case1 "Job_queue" JQueueType.t (fun js -> Job_queue js)
     |> sealv
 
-  let merge = Irmin.Merge.(option (idempotent t))
+  let merge = Irmin.Merge.(option (default t))
 end
 
 exception Malformed_params of string
