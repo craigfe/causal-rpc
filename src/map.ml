@@ -291,10 +291,14 @@ module Make
   let map: type a. ?timeout:float -> a Operation.Unboxed.t -> a params -> t -> t Lwt.t =
     fun ?(timeout=5.0) operation params m ->
 
-    (* TODO: ensure this name doesn't collide with existing branches *)
-    let map_name = "map--" ^ Misc.generate_rand_string ~length:8 () in
+    (* Generate a new unique branch name for the map *)
+    let rec unique_name_gen () =
+      Lwt.wrap (fun () -> "map--" ^ Misc.generate_rand_string ~length:8 ())
+      >>= fun map_name -> Store.Branch.mem (Store.repo m) map_name
+      >>= fun exists -> if exists then unique_name_gen () else Lwt.return map_name
+    in unique_name_gen ()
 
-    Logs_lwt.app (fun m -> m "Map operation issued. Branch name %s" map_name)
+    >>= fun map_name -> Logs_lwt.app (fun m -> m "Map operation issued. Branch name %s" map_name)
 
     (* Push the job to the job queue *)
     >>= fun () -> JobQueue.Impl.push (JobQueue.Impl.job_of_string map_name) m
