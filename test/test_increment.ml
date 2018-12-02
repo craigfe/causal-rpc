@@ -138,11 +138,41 @@ let multiply_tests _ () =
     >|= Alcotest.(check (list int)) "Multiply request on multiple keys" [0; 50; 500]
   ]
 
+let worker_pool_tests _ () =
+  Logs.set_reporter (Logs_fmt.reporter ());
+  Logs.set_level (Some Logs.Info);
+  Lwt_preemptive.simple_init ();
+  let root = "/tmp/irmin/test_increment/worker_pool/" in
+
+  Lwt.pick [
+    worker_pool 4 "worker_pool/test-0001";
+
+    IntMap.empty ~directory:(root ^ "test-0001") ()
+    |> IntMap.add "a" (Int64.of_int 1)
+    |> IntMap.add "b" (Int64.of_int 2)
+    |> IntMap.add "c" (Int64.of_int 3)
+    |> IntMap.add "d" (Int64.of_int 4)
+    |> IntMap.add "e" (Int64.of_int 5)
+    |> IntMap.add "f" (Int64.of_int 6)
+    |> IntMap.add "g" (Int64.of_int 7)
+    |> IntMap.add "h" (Int64.of_int 8)
+    |> IntMap.add "i" (Int64.of_int 9)
+    |> IntMap.add "j" (Int64.of_int 10)
+    |> IntMap.add "k" (Int64.of_int 11)
+    |> IntMap.add "l" (Int64.of_int 12)
+
+    |> IntMap.map ~timeout:60.0 multiply_op (Interface.Param (Type.int64, Int64.of_int 10, Interface.Unit))
+
+    >|= IntMap.find "a"
+    >|= Alcotest.(check int64) "Multiply request on many keys in parallel" (Int64.of_int 10)
+  ]
+
 let tests = [
   Alcotest_lwt.test_case "Workerless tests" `Quick basic_tests;
   "Tests of timeouts", `Quick, timeout_tests;
   Alcotest_lwt.test_case "No-op testing" `Quick noop_tests;
   Alcotest_lwt.test_case "Increment testing" `Quick increment_tests;
-  Alcotest_lwt.test_case "Multiply testing" `Quick multiply_tests
+  Alcotest_lwt.test_case "Multiply testing" `Quick multiply_tests;
+  Alcotest_lwt.test_case "Worker pool testing" `Slow worker_pool_tests
 ]
 
