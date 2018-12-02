@@ -98,6 +98,7 @@ module type S = sig
   module JobQueue: JOB_QUEUE with module Store = Store
   module Operation: Interface.OPERATION with module Val = Value
 
+  exception Internal_type_error
   exception Store_error of Store.write_error
   type 'a params = 'a Interface.MakeOperation(Value).params
 
@@ -155,6 +156,7 @@ module Make
   type t = Sync.db
   (* A map is a branch in an Irmin Key-value store *)
 
+  exception Internal_type_error
   exception Store_error of Store.write_error
 
   let generate_random_directory () =
@@ -197,9 +199,9 @@ module Make
         ~info:(Irmin_unix.info ~author:"client" "%s" message)
         ["vals"; key]
         (Value value)
-      >|= fun res -> match res with
-      | Ok () -> ()
-      | Error _ -> invalid_arg "some error"
+      >>= fun res -> match res with
+      | Ok () -> Lwt.return_unit
+      | Error se -> Lwt.fail @@ Store_error se
 
     in Lwt_main.run lwt; m
 
@@ -207,9 +209,9 @@ module Make
     let lwt =
       (* Get the value from the store and deserialise it *)
       Store.get m ["vals"; key]
-      >|= fun value -> match value with
-      | Value v -> v
-      | _ -> invalid_arg "Can't happen by design"
+      >>= fun value -> match value with
+      | Value v -> Lwt.return v
+      | _ -> Lwt.fail Internal_type_error
 
     in try
       Lwt_main.run lwt
@@ -242,16 +244,16 @@ module Make
       >>= Lwt_list.map_p (fun (x, _) -> Store.get m ["vals"; x])
       >|= List.map (fun value -> match value with
           | Value v -> v
-          | _ -> invalid_arg "Can't happen by design"
+          | _ -> raise Internal_type_error
         )
     in Lwt_main.run lwt
 
   let get_task_queue m =
     Store.find m ["task_queue"]
-    >|= fun q -> match q with
-    | Some Task_queue tq -> tq
-    | Some _ -> invalid_arg "Can't happen by design"
-    | None -> ([], [])
+    >>= fun q -> match q with
+    | Some Task_queue tq -> Lwt.return tq
+    | Some _ -> Lwt.fail Internal_type_error
+    | None -> Lwt.return ([], [])
 
   let task_queue_is_empty branch =
     let lwt =
@@ -293,9 +295,9 @@ module Make
     Store.set ~info:(Irmin_unix.info ~author:"map" "Specifying workload")
       m ["task_queue"] q
 
-    >|= fun res -> match res with
-    | Ok () -> ()
-    | Error we -> raise (Store_error we)
+    >>= fun res -> match res with
+    | Ok () -> Lwt.return_unit
+    | Error we -> Lwt.fail @@ Store_error we
 
   let map: type a. ?timeout:float -> a Operation.Unboxed.t -> a params -> t -> t Lwt.t =
     fun ?(timeout=5.0) operation params m ->
@@ -316,9 +318,9 @@ module Make
     >>= fun () -> Store.clone ~src:m ~dst:map_name
     >>= fun branch -> Store.merge_with_branch m
       ~info:(Irmin_unix.info ~author:"map" "Merged") "master"
-    >|= (fun merge -> match merge with
-        | Ok () -> ()
-        | Error _ -> invalid_arg "merge conflict")
+    >>= (fun merge -> match merge with
+        | Ok () -> Lwt.return_unit
+        | Error `Conflict key -> Lwt.fail_with ("merge conflict on key " ^ key))
 
     (* Generate and commit the task queue *)
     >>= fun () -> set_task_queue (generate_task_queue operation params m) branch
@@ -358,9 +360,9 @@ module Make
     (* Merge the map branch into master *)
     >>= fun () -> Store.merge_with_branch m
       ~info:(Irmin_unix.info ~author: "map" "Job %s complete" map_name) map_name
-    >|= (fun merge -> match merge with
-        | Ok () -> ()
-        | Error _ -> invalid_arg "merge conflict")
+    >>= (fun merge -> match merge with
+        | Ok () -> Lwt.return_unit
+        | Error `Conflict key -> Lwt.fail_with ("merge conflict on key " ^ key))
     >>= fun () -> JobQueue.Impl.pop m
     >>= fun _ -> Logs_lwt.app (fun m -> m "Map operation complete. Branch name %s" map_name)
 

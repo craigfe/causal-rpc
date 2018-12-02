@@ -61,27 +61,31 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
         (Task_queue (xs, x::pending))
       >>= fun res -> (match res with
           | Ok () -> Sync.push_exn local_br remote
-          | Error _ -> invalid_arg "some error")
+          | Error se -> Lwt.fail @@ Store_error se)
 
       >|= fun () -> Some x
 
     | Some Task_queue ([], _) -> Lwt.return None (* All tasks are pending *)
     | None -> Lwt.return None (* No task to be performed *)
-    | Some _ -> invalid_arg "Can't happen by design"
+    | Some _ -> Lwt.fail Internal_type_error
 
   (* TODO: do this as part of a transaction *)
   let remove_pending_task task local_br worker_name =
     Store.get local_br ["task_queue"]
-    >|= (fun q -> match q with
-        | Task_queue (todo, pending) -> Map.Task_queue (todo, List.filter (fun t -> t <> task) pending)
-        | _ -> invalid_arg "Can't happen by design")
+    >>= (fun q -> match q with
+        | Task_queue (todo, pending) ->
+          List.filter (fun t -> t <> task) pending
+          |> (fun new_pending -> Map.Task_queue (todo, new_pending))
+          |> Lwt.return
+
+        | _ -> Lwt.fail Internal_type_error)
 
     >>= Store.set local_br
       ~info:(Irmin_unix.info ~author:worker_name "Removed pending <%s> on key %s" task.name task.key)
       ["task_queue"]
-    >|= fun res -> (match res with
-        | Ok () -> ()
-        | Error _ -> invalid_arg "some error")
+    >>= fun res -> (match res with
+        | Ok () -> Lwt.return_unit
+        | Error se -> Lwt.fail @@ Store_error se)
 
   (* We have a function of type (param -> ... -> param -> val -> val).
      Here we take the parameters that were passed as part of the RPC and recursively apply them
@@ -107,11 +111,11 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
               let v = func x in
               Logs.info (fun m -> m "function complete");
               v)
-          | _ -> invalid_arg "Too many parameters")
+          | _ -> raise @@ Map.Malformed_params "Too many parameters")
 
         | Interface.ParamType (typ, nested_type) -> (Logs.info (fun m -> m "Nested type"); match params with
           | (x::xs) -> aux nested_type (func (Type.Boxed.unbox typ x)) xs
-          | [] -> invalid_arg "Not enough parameters")
+          | [] -> raise @@ Map.Malformed_params "Not enough parameters")
 
       in aux func_type func params
 
@@ -122,9 +126,9 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
         | None -> invalid_arg "Operation not found") in
 
     Store.get store ["vals"; task.key]
-    >|= (fun cont -> (match cont with
-        | Value v -> v
-        | _ -> invalid_arg "Can't happen by design"))
+    >>= (fun cont -> (match cont with
+        | Value v -> Lwt.return v
+        | _ -> Lwt.fail Internal_type_error))
 
     >>= fun old_val -> Lwt.return ((pass_params (boxed_mi ()) task.params) old_val)
     >>= fun new_val -> Store.set
@@ -134,9 +138,9 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
       ["vals"; task.key]
       (Value new_val)
 
-    >|= fun res -> (match res with
-        | Ok () -> store
-        | Error se -> raise @@ Store_error se)
+    >>= fun res -> (match res with
+        | Ok () -> Lwt.return store
+        | Error se -> Lwt.fail @@ Store_error se)
 
   let handle_request ~src repo client job worker_name =
 

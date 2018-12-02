@@ -81,6 +81,7 @@ module type S = sig
 
   type 'a params = 'a Interface.MakeOperation(Value).params
 
+  exception Internal_type_error
   exception Store_error of Store.write_error
 
   (* -- TESTING PURPOSES --------------------------------- *)
