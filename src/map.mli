@@ -81,6 +81,8 @@ module type S = sig
 
   type 'a params = 'a Interface.MakeOperation(Value).params
 
+  exception Store_error of Store.write_error
+
   (* -- TESTING PURPOSES --------------------------------- *)
   val task_queue_is_empty: t -> bool
   val job_queue_is_empty: t -> bool

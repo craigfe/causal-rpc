@@ -134,7 +134,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
     >|= fun res -> (match res with
         | Ok () -> store
-        | Error _ -> invalid_arg "shouldn't happen")
+        | Error se -> raise @@ Store_error se)
 
   let handle_request repo client job worker_name =
 

@@ -98,6 +98,7 @@ module type S = sig
   module JobQueue: JOB_QUEUE with module Store = Store
   module Operation: Interface.OPERATION with module Val = Value
 
+  exception Store_error of Store.write_error
   type 'a params = 'a Interface.MakeOperation(Value).params
 
   (* Here for testing purposes *)
@@ -153,6 +154,8 @@ module Make
 
   type t = Sync.db
   (* A map is a branch in an Irmin Key-value store *)
+
+  exception Store_error of Store.write_error
 
   let generate_random_directory () =
     Misc.generate_rand_string ~length:20 ()
@@ -284,9 +287,12 @@ module Make
     |> fun ops -> Task_queue (ops, []) (* Initially there are no pending operations *)
 
   let set_task_queue q m =
-    Store.set ~info:(Irmin_unix.info ~author:"map" "specifying workload")
+    Store.set ~info:(Irmin_unix.info ~author:"map" "Specifying workload")
       m ["task_queue"] q
 
+    >|= fun res -> match res with
+    | Ok () -> ()
+    | Error we -> raise (Store_error we)
 
   let map: type a. ?timeout:float -> a Operation.Unboxed.t -> a params -> t -> t Lwt.t =
     fun ?(timeout=5.0) operation params m ->
@@ -304,7 +310,7 @@ module Make
     >>= fun () -> JobQueue.Impl.push (JobQueue.Impl.job_of_string map_name) m
 
     (* Create a new branch to isolate the operation *)
-    >>= fun _ -> Store.clone ~src:m ~dst:map_name
+    >>= fun () -> Store.clone ~src:m ~dst:map_name
     >>= fun branch -> Store.merge_with_branch m
       ~info:(Irmin_unix.info ~author:"map" "Merged") "master"
     >|= (fun merge -> match merge with
@@ -314,9 +320,8 @@ module Make
     (* Generate and commit the task queue *)
     >>= fun () -> set_task_queue (generate_task_queue operation params m) branch
 
-
     (* Wait for the task queue to be empty *)
-    >>= fun _ ->
+    >>= fun () ->
 
     let inactivity_count = ref 0 in
     let reset_count diff = match diff with
@@ -346,15 +351,15 @@ module Make
     in inner ()
 
     (* Merge the map branch into master *)
-    >>= fun _ -> Store.merge_with_branch m
+    >>= fun () -> Store.merge_with_branch m
       ~info:(Irmin_unix.info ~author: "map" "Job %s complete" map_name) map_name
     >|= (fun merge -> match merge with
         | Ok () -> ()
         | Error _ -> invalid_arg "merge conflict")
-    >>= fun _ -> JobQueue.Impl.pop m
+    >>= fun () -> JobQueue.Impl.pop m
     >>= fun _ -> Logs_lwt.app (fun m -> m "Map operation complete. Branch name %s" map_name)
 
-    >|= fun _ -> m
+    >|= fun () -> m
 
-  let _ = Irmin_unix.set_listen_dir_hook ()
+  let () = Irmin_unix.set_listen_dir_hook ()
 end
