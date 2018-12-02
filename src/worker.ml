@@ -6,7 +6,7 @@ module type W = sig
   include Map.S
   val get_task_opt: Sync.db -> Irmin.remote -> string -> task option Lwt.t
   val perform_task: Sync.db -> task -> string -> Sync.db Lwt.t
-  val handle_request: Store.repo -> string -> JobQueue.job -> string -> unit Lwt.t
+  val handle_request: src:Logs.src -> Store.repo -> string -> JobQueue.job -> string -> unit Lwt.t
 
   val run:
     ?name:string ->
@@ -136,7 +136,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
         | Ok () -> store
         | Error se -> raise @@ Store_error se)
 
-  let handle_request repo client job worker_name =
+  let handle_request ~src repo client job worker_name =
 
     (* Checkout the branch *)
     let br_name = JobQueue.Impl.job_to_string job in
@@ -149,13 +149,13 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     >>= fun () -> get_task_opt local_br remote worker_name
     >>= (fun task -> match task with
         | Some t -> begin
-            Logs_lwt.info (fun m -> m "Starting to perform task")
+            Logs_lwt.info ~src (fun m -> m "Starting to perform task")
             >>= fun () -> perform_task local_br t worker_name
-            >>= fun br -> Logs_lwt.info @@ fun m -> m "Completed task. Removing from pending queue"
+            >>= fun br -> Logs_lwt.info ~src @@ fun m -> m "Completed task. Removing from pending queue"
             >>= fun () -> remove_pending_task t br worker_name
-            >>= fun () -> Logs_lwt.info @@ fun m -> m "Removed task from pending queue"
+            >>= fun () -> Logs_lwt.info ~src @@ fun m -> m "Removed task from pending queue"
             >>= fun () -> Sync.push_exn br remote
-            >>= fun () -> Logs_lwt.info @@ fun m -> m "Changes pushed to branch %s" br_name
+            >>= fun () -> Logs_lwt.info ~src @@ fun m -> m "Changes pushed to branch %s" br_name
           end
 
         | None -> begin
@@ -197,7 +197,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
             Logs_lwt.info (fun m -> m "Detected a map request on branch %s"
                               (JobQueue.Impl.job_to_string br_name))
-            >>= fun () -> handle_request s client br_name name
+            >>= fun () -> handle_request ~src s client br_name name
             >>= fun () -> Logs_lwt.info (fun m -> m "Finished handling request on branch %s"
                                             (JobQueue.Impl.job_to_string br_name))
 

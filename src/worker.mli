@@ -12,7 +12,7 @@ module type W = sig
 
   (** Checkout br_name in store and pull from client, then perform any work still to
       do on that branch *)
-  val handle_request: Store.repo -> string -> JobQueue.job -> string -> unit Lwt.t
+  val handle_request: src:Logs.src -> Store.repo -> string -> JobQueue.job -> string -> unit Lwt.t
 
   (* --------------------------------------------------------- *)
 
