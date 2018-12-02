@@ -326,9 +326,9 @@ module Make
     (* Wait for the task queue to be empty *)
     >>= fun () ->
 
-    let inactivity_count = ref 0 in
+    let inactivity_count = ref 0.0 in
     let reset_count diff = match diff with
-      | `Added _ -> (inactivity_count := 0; Lwt.return_unit)
+      | `Added _ -> (inactivity_count := 0.0; Lwt.return_unit)
       | _ -> Lwt.return_unit in
 
     Store.watch branch reset_count
@@ -337,17 +337,19 @@ module Make
     >>= fun () ->
     let rec inner () =
 
+      let sleep_interval = Pervasives.min (timeout /. 8.0) 1.0 in
+
       if task_queue_is_empty branch then (* we are done *)
         Store.unwatch watch
 
-      else if !inactivity_count >= 8 then (* we have been waiting for too long *)
-        Logs_lwt.app (fun m -> m "Inactivity count: %d" (!inactivity_count))
+      else if !inactivity_count >= timeout then (* we have been waiting for too long *)
+        Logs_lwt.app (fun m -> m "Inactivity count: %f" (!inactivity_count))
         >>= fun () -> Lwt.fail Timeout
 
       else (* we will wait for a bit *)
-        Logs_lwt.app (fun m -> m "Sleeping for a time of %f. %d tasks remaining" (timeout /. 8.0) (task_queue_size branch))
-        >>= fun () -> Lwt_unix.sleep (timeout /. 8.0)
-        >|= (fun () -> (inactivity_count := !inactivity_count + 1))
+        Logs_lwt.app (fun m -> m "Sleeping for a time of %f, with an activity count of %f. %d tasks remaining" sleep_interval (!inactivity_count) (task_queue_size branch))
+        >>= fun () -> Lwt_unix.sleep sleep_interval
+        >|= (fun () -> (inactivity_count := !inactivity_count +. sleep_interval))
         >>= Lwt_main.yield
         >>= inner
 
