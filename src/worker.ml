@@ -49,8 +49,10 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     Logs.info (fun m -> m "No directory supplied. Using default directory %s" dir);
     dir
 
-  let get_task_opt local_br remote worker_name =
-    Store.find local_br ["task_queue"]
+  let get_task_opt local_br remote worker_name = (* TODO: implement this all in a transaction *)
+    (* Get latest changes to this branch*)
+    Sync.pull_exn local_br remote `Set
+    >>= fun () -> Store.find local_br ["task_queue"]
     >>= fun q -> match q with
     | Some Task_queue ((x::xs), pending) ->
       Store.set local_br
@@ -143,24 +145,28 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     let remote = upstream client br_name in
 
     Store.of_branch repo br_name
-    >>= fun local_br -> Sync.pull_exn local_br remote `Set
+    >>= fun local_br ->
+    let rec task_exection_loop () =
 
-    (* Attempt to take a task from the queue *)
-    >>= fun () -> get_task_opt local_br remote worker_name
-    >>= (fun task -> match task with
-        | Some t -> begin
-            Logs_lwt.info ~src (fun m -> m "Starting to perform task")
-            >>= fun () -> perform_task local_br t worker_name
-            >>= fun br -> Logs_lwt.info ~src @@ fun m -> m "Completed task. Removing from pending queue"
-            >>= fun () -> remove_pending_task t br worker_name
-            >>= fun () -> Logs_lwt.info ~src @@ fun m -> m "Removed task from pending queue"
-            >>= fun () -> Sync.push_exn br remote
-            >>= fun () -> Logs_lwt.info ~src @@ fun m -> m "Changes pushed to branch %s" br_name
-          end
+      (* Attempt to take a task from the queue *)
+      get_task_opt local_br remote worker_name
+      >>= fun task -> match task with
 
-        | None -> begin
-            Logs_lwt.info (fun m -> m "No pending tasks in the task queue.")
-          end)
+      | Some t -> begin
+          Logs_lwt.info ~src (fun m -> m "Starting to perform task")
+          >>= fun () -> perform_task local_br t worker_name
+          >>= fun br -> Logs_lwt.info ~src @@ fun m -> m "Completed task. Removing from pending queue"
+          >>= fun () -> remove_pending_task t br worker_name
+          >>= fun () -> Logs_lwt.info ~src @@ fun m -> m "Removed task from pending queue"
+          >>= fun () -> Sync.push_exn br remote
+          >>= fun () -> Logs_lwt.info ~src @@ fun m -> m "Changes pushed to branch %s" br_name
+          >>= Lwt_main.yield
+          >>= task_exection_loop
+        end
+
+      | None -> Logs_lwt.info @@ fun m -> m "No pending tasks in the task queue."
+
+    in task_exection_loop ()
 
   let run
       ?(name=random_name())
