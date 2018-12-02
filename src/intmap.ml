@@ -33,9 +33,6 @@ module Implementation: Interface.IMPL with type Val.t = int64 = struct
   module I = Interface.MakeImplementation(Val)
   open I
 
-  (* let increment x = (Printf.printf "incrementing val %s" (Int64.to_string x)); x *)
-
-
   let identity x = x
   let increment x = Int64.add Int64.one x
   let multiply = Int64.mul

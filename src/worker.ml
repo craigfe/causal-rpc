@@ -58,8 +58,8 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
         ["task_queue"]
         (Task_queue (xs, x::pending))
       >>= fun res -> (match res with
-      | Ok () -> Sync.push_exn local_br remote
-      | Error _ -> invalid_arg "some error")
+          | Ok () -> Sync.push_exn local_br remote
+          | Error _ -> invalid_arg "some error")
 
       >|= fun () -> Some x
 
@@ -78,8 +78,8 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
       ~info:(Irmin_unix.info ~author:worker_name "Removed pending <%s> on key %s" task.name task.key)
       ["task_queue"]
     >|= fun res -> (match res with
-    | Ok () -> ()
-    | Error _ -> invalid_arg "some error")
+        | Ok () -> ()
+        | Error _ -> invalid_arg "some error")
 
   (* We have a function of type (param -> ... -> param -> val -> val).
      Here we take the parameters that were passed as part of the RPC and recursively apply them
@@ -101,10 +101,10 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
         match func_type with
         | Interface.BaseType -> (Logs.info (fun m -> m "Reached base type"); match params with
           | [] -> (fun x ->
-                Logs.info (fun m -> m "executing function");
-                let v = func x in
-                Logs.info (fun m -> m "function complete");
-                v)
+              Logs.info (fun m -> m "executing function");
+              let v = func x in
+              Logs.info (fun m -> m "function complete");
+              v)
           | _ -> invalid_arg "Too many parameters")
 
         | Interface.ParamType (typ, nested_type) -> (Logs.info (fun m -> m "Nested type"); match params with
@@ -116,8 +116,8 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
   let perform_task store (task:Map.task) worker_name =
 
     let boxed_mi () = (match I.find_operation_opt task.name Impl.api with
-      | Some operation -> operation
-      | None -> invalid_arg "Operation not found") in
+        | Some operation -> operation
+        | None -> invalid_arg "Operation not found") in
 
     Store.get store ["vals"; task.key]
     >|= (fun cont -> (match cont with

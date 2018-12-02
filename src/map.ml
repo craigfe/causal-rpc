@@ -183,8 +183,8 @@ module Make
 
   let add ?message key value m =
     let message = (match message with
-      | Some m -> m
-      | None -> Printf.sprintf "Committing to key %s" key) in
+        | Some m -> m
+        | None -> Printf.sprintf "Committing to key %s" key) in
 
     let lwt =
       Store.set m
@@ -273,15 +273,15 @@ module Make
     let name = Operation.Unboxed.name operation in
     let param_list = flatten_params params in
 
-      keys map
-      |> List.map (fun key -> {name; params = param_list; key})
-      |> (fun ops ->
-          Logs.app (fun m -> m "Generated task queue of [%s]"
-                        (List.map (fun {name = n; params = _; key = k} ->
-                             Printf.sprintf "{name: %s; key: %s}" n k) ops
-                         |> String.concat ", "));
-          ops)
-      |> fun ops -> Task_queue (ops, []) (* Initially there are no pending operations *)
+    keys map
+    |> List.map (fun key -> {name; params = param_list; key})
+    |> (fun ops ->
+        Logs.app (fun m -> m "Generated task queue of [%s]"
+                     (List.map (fun {name = n; params = _; key = k} ->
+                          Printf.sprintf "{name: %s; key: %s}" n k) ops
+                      |> String.concat ", "));
+        ops)
+    |> fun ops -> Task_queue (ops, []) (* Initially there are no pending operations *)
 
   let set_task_queue q m =
     Store.set ~info:(Irmin_unix.info ~author:"map" "specifying workload")
