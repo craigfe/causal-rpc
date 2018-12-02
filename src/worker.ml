@@ -54,7 +54,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     >>= fun q -> match q with
     | Some Task_queue ((x::xs), pending) ->
       Store.set local_br
-        ~info:(Irmin_unix.info ~author:"map" "%s consuming task on key %s" worker_name x.key)
+        ~info:(Irmin_unix.info ~author:worker_name "Consuming task on key %s" x.key)
         ["task_queue"]
         (Task_queue (xs, x::pending))
       >>= fun res -> (match res with
@@ -73,8 +73,9 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     >|= (fun q -> match q with
         | Task_queue (todo, pending) -> Map.Task_queue (todo, List.filter (fun t -> t <> task) pending)
         | _ -> invalid_arg "Can't happen by design")
+
     >>= Store.set local_br
-      ~info:(Irmin_unix.info ~author:"map" "%s completed pending task" worker_name)
+      ~info:(Irmin_unix.info ~author:worker_name "Removed pending <%s> on key %s" task.name task.key)
       ["task_queue"]
     >|= fun res -> (match res with
     | Ok () -> ()
