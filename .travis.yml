@@ -4,6 +4,8 @@ script:
   - bash -ex .travis-ocaml.sh
   - eval $(opam config env)
   - opam install --yes dune alcotest alcotest-lwt digestif cmdliner fmt irmin irmin-unix logs lwt ocamlgraph
+  - git clone https://github.com/mirage/irmin
+  - opam pin ./irmin -y
   - make test
 env:
   - OCAML_VERSION=4.05
