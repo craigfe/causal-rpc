@@ -38,6 +38,7 @@ module type JOB_QUEUE = sig
   module type IMPL = sig
     val job_of_string: string -> job
     val job_to_string: job -> string
+    val job_equal: job -> job -> bool
 
     val is_empty: Store.t -> bool Lwt.t
     val push: job -> Store.t -> unit Lwt.t

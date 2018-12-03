@@ -45,6 +45,7 @@ module type JOB_QUEUE = sig
   module type IMPL = sig
     val job_of_string: string -> job
     val job_to_string: job -> string
+    val job_equal: job -> job -> bool
 
     val is_empty: Store.t -> bool Lwt.t
     val push: job -> Store.t -> unit Lwt.t
@@ -357,15 +358,26 @@ module Make
 
     in inner ()
 
+    >>= (fun () -> Logs_lwt.info @@ fun m -> m "All operations complete on %s. Merging with the master branch" map_name)
+
     (* Merge the map branch into master *)
     >>= fun () -> Store.merge_with_branch m
       ~info:(Irmin_unix.info ~author: "map" "Job %s complete" map_name) map_name
+
     >>= (fun merge -> match merge with
         | Ok () -> Lwt.return_unit
         | Error `Conflict key -> Lwt.fail_with ("merge conflict on key " ^ key))
-    >>= fun () -> JobQueue.Impl.pop m
-    >>= fun _ -> Logs_lwt.app (fun m -> m "Map operation complete. Branch name %s" map_name)
 
+    (* Remove the job from the job queue *)
+    >>= fun () -> JobQueue.Impl.pop m
+
+    (* For now, we only ever perform one map at once. Eventually, the job queue
+       will need to be cleverer to avoid popping off the wrong job here *)
+    >>= fun j -> if JobQueue.Impl.job_equal j (JobQueue.Impl.job_of_string map_name)
+    then Lwt.fail_with "Didn't pop the right job!"
+    else Lwt.return_unit
+
+    >>= (fun _ -> Logs_lwt.app @@ fun m -> m "Map operation complete. Branch name %s" map_name)
     >|= fun () -> m
 
   let () = Irmin_unix.set_listen_dir_hook ()

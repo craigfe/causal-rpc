@@ -30,6 +30,7 @@ module Make
   module type IMPL = sig
     val job_of_string: string -> job
     val job_to_string: job -> string
+    val job_equal: job -> job -> bool
 
     val is_empty: Store.t -> bool Lwt.t
     val push: job -> Store.t -> unit Lwt.t
@@ -40,6 +41,8 @@ module Make
   module Impl = struct
     let job_of_string j = j
     let job_to_string j = j
+
+    let job_equal a b = (a == b)
 
     let of_map m =
       Store.find m ["job_queue"]
