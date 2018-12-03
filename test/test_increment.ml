@@ -174,6 +174,6 @@ let tests = [
   Alcotest_lwt.test_case "No-op testing" `Quick noop_tests;
   Alcotest_lwt.test_case "Increment testing" `Quick increment_tests;
   Alcotest_lwt.test_case "Multiply testing" `Quick multiply_tests;
-  Alcotest_lwt.test_case "Worker pool testing" `Slow worker_pool_tests
+  (* Alcotest_lwt.test_case "Worker pool testing" `Slow worker_pool_tests *)
 ]
 
