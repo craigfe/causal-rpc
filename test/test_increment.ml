@@ -21,7 +21,7 @@ let worker_pool n dir =
 
 (** Tests of the distributed increment operation on integer maps *)
 let basic_tests _ () =
-  Logs.set_reporter (Logs_fmt.reporter ());
+  Misc.set_reporter ();
   Logs.set_level (Some Logs.Info);
   let root = "/tmp/irmin/increment/" in
 
@@ -31,7 +31,7 @@ let basic_tests _ () =
 
 
 let timeout_tests () =
-  Logs.set_reporter (Logs_fmt.reporter ());
+  Misc.set_reporter ();
   Logs.set_level (Some Logs.Info);
   let root = "/tmp/irmin/timeout/" in
   let descr = "Calling map on a non-empty Map without a worker causes a timeout" in
@@ -47,7 +47,7 @@ let timeout_tests () =
 
 (** Tests of the scheduling infrastructure and workers, using noops to do 'work' *)
 let noop_tests _ () =
-  Logs.set_reporter (Logs_fmt.reporter ());
+  Misc.set_reporter ();
   Logs.set_level (Some Logs.Info);
   let root = "/tmp/irmin/test_increment/noop/" in
 
@@ -77,7 +77,7 @@ let noop_tests _ () =
   ]
 
 let increment_tests _ () =
-  Logs.set_reporter (Logs_fmt.reporter ());
+  Misc.set_reporter ();
   Logs.set_level (Some Logs.Info);
   Lwt_preemptive.simple_init ();
   let root = "/tmp/irmin/test_increment/increment/" in
@@ -119,7 +119,7 @@ let increment_tests _ () =
   ]
 
 let multiply_tests _ () =
-  Logs.set_reporter (Logs_fmt.reporter ());
+  Misc.set_reporter ();
   Logs.set_level (Some Logs.Info);
   Lwt_preemptive.simple_init ();
   let root = "/tmp/irmin/test_increment/multiply/" in
@@ -139,7 +139,7 @@ let multiply_tests _ () =
   ]
 
 let worker_pool_tests _ () =
-  Logs.set_reporter (Logs_fmt.reporter ());
+  Misc.set_reporter ();
   Logs.set_level (Some Logs.Info);
   Lwt_preemptive.simple_init ();
   let root = "/tmp/irmin/test_increment/worker_pool/" in

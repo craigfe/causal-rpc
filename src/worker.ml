@@ -6,9 +6,10 @@ module type W = sig
   include Map.S
   val get_task_opt: Sync.db -> Irmin.remote -> string -> task option Lwt.t
   val perform_task: Sync.db -> task -> string -> Sync.db Lwt.t
-  val handle_request: src:Logs.src -> Store.repo -> string -> JobQueue.job -> string -> unit Lwt.t
+  val handle_request: ?src:Logs.src -> Store.repo -> string -> JobQueue.job -> string -> unit Lwt.t
 
   val run:
+    ?log_source:bool ->
     ?name:string ->
     ?dir:string ->
     ?poll_freq:float ->
@@ -39,14 +40,14 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     else
       Store.remote uri
 
-  let random_name () =
+  let random_name ?src () =
     Misc.generate_rand_string ~length:8 ()
     |> Pervasives.(^) "worker_"
-    |> fun x -> Logs.info (fun m -> m "No name supplied. Generating random worker name %s" x); x
+    |> fun x -> Logs.info ?src (fun m -> m "No name supplied. Generating random worker name %s" x); x
 
-  let directory_from_name name =
+  let directory_from_name ?src name =
     let dir = "/tmp/irmin/" ^ name in
-    Logs.info (fun m -> m "No directory supplied. Using default directory %s" dir);
+    Logs.info ?src (fun m -> m "No directory supplied. Using default directory %s" dir);
     dir
 
   let get_task_opt local_br remote worker_name = (* TODO: implement this all in a transaction *)
@@ -90,7 +91,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
   (* We have a function of type (param -> ... -> param -> val -> val).
      Here we take the parameters that were passed as part of the RPC and recursively apply them
      to the function implementation until we are left with a function of type (val -> val). *)
-  let pass_params boxed_mi params =
+  let pass_params ?src boxed_mi params =
     match boxed_mi with
     | I.Op.E matched_impl ->
       let (unboxed, func) = matched_impl in
@@ -105,15 +106,15 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
         -> (value -> value) = fun func_type func params ->
 
         match func_type with
-        | Interface.BaseType -> (Logs.info (fun m -> m "Reached base type"); match params with
+        | Interface.BaseType -> (Logs.debug ?src (fun m -> m "Reached base type"); match params with
           | [] -> (fun x ->
-              Logs.info (fun m -> m "executing function");
+              Logs.debug ?src (fun m -> m "Executing val -> val level function");
               let v = func x in
-              Logs.info (fun m -> m "function complete");
+              Logs.debug ?src (fun m -> m "Function execution complete");
               v)
           | _ -> raise @@ Map.Malformed_params "Too many parameters")
 
-        | Interface.ParamType (typ, nested_type) -> (Logs.info (fun m -> m "Nested type"); match params with
+        | Interface.ParamType (typ, nested_type) -> (Logs.debug ?src (fun m -> m "Nested type"); match params with
           | (x::xs) -> aux nested_type (func (Type.Boxed.unbox typ x)) xs
           | [] -> raise @@ Map.Malformed_params "Not enough parameters")
 
@@ -142,7 +143,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
         | Ok () -> Lwt.return store
         | Error se -> Lwt.fail @@ Store_error se)
 
-  let handle_request ~src repo client job worker_name =
+  let handle_request ?src repo client job worker_name =
 
     (* Checkout the branch *)
     let br_name = JobQueue.Impl.job_to_string job in
@@ -157,30 +158,35 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
       >>= fun task -> match task with
 
       | Some t -> begin
-          Logs_lwt.info ~src (fun m -> m "Starting to perform task")
+          Logs_lwt.info ?src (fun m -> m "Starting to perform task")
           >>= fun () -> perform_task local_br t worker_name
-          >>= fun br -> Logs_lwt.info ~src @@ fun m -> m "Completed task. Removing from pending queue"
+          >>= fun br -> Logs_lwt.info ?src @@ fun m -> m "Completed task. Removing from pending queue"
           >>= fun () -> remove_pending_task t br worker_name
-          >>= fun () -> Logs_lwt.info ~src @@ fun m -> m "Removed task from pending queue"
+          >>= fun () -> Logs_lwt.info ?src @@ fun m -> m "Removed task from pending queue"
           >>= fun () -> Sync.push_exn br remote
-          >>= fun () -> Logs_lwt.info ~src @@ fun m -> m "Changes pushed to branch %s" br_name
+          >>= fun () -> Logs_lwt.info ?src @@ fun m -> m "Changes pushed to branch %s" br_name
           >>= Lwt_main.yield
           >>= task_exection_loop
         end
 
-      | None -> Logs_lwt.info @@ fun m -> m "No pending tasks in the task queue."
+      | None -> Logs_lwt.info ?src @@ fun m -> m "No pending tasks in the task queue."
 
     in task_exection_loop ()
 
   let run
+      ?(log_source=true)
       ?(name=random_name())
-      ?(dir=directory_from_name name)
+      ?dir
       ?(poll_freq = 5.0)
       ~client () =
 
+    let src = if log_source then Some (Logs.Src.create name) else None in
+    let dir = match dir with
+      | Some d -> d
+      | None -> directory_from_name ?src name in
+
     let config = Irmin_git.config ~bare:false dir in
     let upstr = upstream client "master" in
-    let src = Logs.Src.create name in
 
     if String.sub dir 0 11 <> "/tmp/irmin/"
     then invalid_arg ("Supplied directory (" ^ dir ^ ") must be in /tmp/irmin/");
@@ -189,7 +195,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     let ret_code = Sys.command ("rm -rf " ^ dir) in
       if (ret_code <> 0) then invalid_arg "Unable to delete directory";
 
-    Logs_lwt.app ~src (fun m -> m "Initialising worker with name %s for client %s" name client)
+    Logs_lwt.app ?src (fun m -> m "Initialising worker with name %s for client %s" name client)
     >>= fun () -> Store.Repo.v config
     >>= fun s -> Store.master s
 
@@ -205,14 +211,14 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
           (* A map request has been issued *)
           | Some br_name ->
 
-            Logs_lwt.info (fun m -> m "Detected a map request on branch %s"
+            Logs_lwt.info ?src (fun m -> m "Detected a map request on branch %s"
                               (JobQueue.Impl.job_to_string br_name))
-            >>= fun () -> handle_request ~src s client br_name name
-            >>= fun () -> Logs_lwt.info (fun m -> m "Finished handling request on branch %s"
+            >>= fun () -> handle_request ?src s client br_name name
+            >>= fun () -> Logs_lwt.info ?src (fun m -> m "Finished handling request on branch %s"
                                             (JobQueue.Impl.job_to_string br_name))
 
           | None ->
-            Logs_lwt.info (fun m -> m "Found no map request. Sleeping for %f seconds." poll_freq)
+            Logs_lwt.info ?src (fun m -> m "Found no map request. Sleeping for %f seconds." poll_freq)
             >>= fun () -> Lwt_unix.sleep poll_freq)
 
       >>= Lwt_main.yield
