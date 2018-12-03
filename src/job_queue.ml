@@ -57,8 +57,10 @@ module Make
 
     let push j m = (* TODO: make this atomic *)
       of_map m
-      >>= fun js -> Store.set m ~info:(Irmin_unix.info ~author:"map" "Issuing map")
-        ["job_queue"] (Job_queue (j::js))
+      >>= fun js -> Store.set m
+        ~info:(Irmin_unix.info ~author:"map" "Add %s to job queue" j)
+        ["job_queue"]
+        (Job_queue (j::js))
       >|= fun res -> match res with
       | Ok () -> ()
       | Error _ -> invalid_arg "some error"
@@ -68,8 +70,10 @@ module Make
       of_map m
       >>= fun js -> match js with
       | (j::js) ->
-        Store.set m ~info:(Irmin_unix.info ~author:"map" "Completed map")
-                     ["job_queue"] (Job_queue js)
+        Store.set m
+          ~info:(Irmin_unix.info ~author:"map" "Remove %s from job queue" j)
+          ["job_queue"]
+          (Job_queue js)
         >|= fun res -> (match res with
         | Ok () -> j
         | Error _ -> invalid_arg "some error")
