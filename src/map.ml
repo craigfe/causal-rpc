@@ -193,7 +193,7 @@ module Make
   let add ?message key value m =
     let message = (match message with
         | Some m -> m
-        | None -> Printf.sprintf "Committing to key %s" key) in
+        | None -> Printf.sprintf "Commit to key %s" key) in
 
     let lwt =
       Store.set m
@@ -293,7 +293,7 @@ module Make
     |> fun ops -> Task_queue (ops, []) (* Initially there are no pending operations *)
 
   let set_task_queue q m =
-    Store.set ~info:(Irmin_unix.info ~author:"map" "Specifying workload")
+    Store.set ~info:(Irmin_unix.info ~author:"map" "Specify workload")
       m ["task_queue"] q
 
     >>= fun res -> match res with

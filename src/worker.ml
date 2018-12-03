@@ -56,7 +56,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     >>= fun q -> match q with
     | Some Task_queue ((x::xs), pending) ->
       Store.set local_br
-        ~info:(Irmin_unix.info ~author:worker_name "Consuming task on key %s" x.key)
+        ~info:(Irmin_unix.info ~author:worker_name "Consume task on key %s" x.key)
         ["task_queue"]
         (Task_queue (xs, x::pending))
       >>= fun res -> (match res with
@@ -81,7 +81,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
         | _ -> Lwt.fail Internal_type_error)
 
     >>= Store.set local_br
-      ~info:(Irmin_unix.info ~author:worker_name "Removed pending <%s> on key %s" task.name task.key)
+      ~info:(Irmin_unix.info ~author:worker_name "Remove pending <%s> on key %s" task.name task.key)
       ["task_queue"]
     >>= fun res -> (match res with
         | Ok () -> Lwt.return_unit
@@ -133,7 +133,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     >>= fun old_val -> Lwt.return ((pass_params (boxed_mi ()) task.params) old_val)
     >>= fun new_val -> Store.set
       ~allow_empty:true
-      ~info:(Irmin_unix.info ~author:worker_name "Performed <%s> on key %s" task.name task.key)
+      ~info:(Irmin_unix.info ~author:worker_name "Perform <%s> on key %s" task.name task.key)
       store
       ["vals"; task.key]
       (Value new_val)
