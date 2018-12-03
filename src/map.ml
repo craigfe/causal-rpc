@@ -196,8 +196,10 @@ module Make
         | None -> Printf.sprintf "Commit to key %s" key) in
 
     let lwt =
-      Store.set m
+      Store.set
+        ~allow_empty:true
         ~info:(Irmin_unix.info ~author:"client" "%s" message)
+        m
         ["vals"; key]
         (Value value)
       >>= fun res -> match res with
