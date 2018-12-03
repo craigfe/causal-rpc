@@ -6,7 +6,7 @@ script:
   - opam install --yes dune alcotest alcotest-lwt digestif cmdliner fmt irmin irmin-unix logs lwt ocamlgraph
 
   - git clone https://github.com/mirage/irmin /tmp/irmin
-  - opam pin irmin-graphql.dev /tmp/irmin -y
+  - opam pin irmin-graphql.dev /tmp/irmin -y || true
   - opam pin /tmp/irmin -y
 
   - make test
