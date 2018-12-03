@@ -5,9 +5,9 @@ script:
   - eval $(opam config env)
   - opam install --yes dune alcotest alcotest-lwt digestif cmdliner fmt irmin irmin-unix logs lwt ocamlgraph
 
-  - git clone https://github.com/mirage/irmin
-  - opam pin irmin-graphql.dev ./irmin -y
-  - opam pin ./irmin -y
+  - git clone https://github.com/mirage/irmin /tmp/irmin
+  - opam pin irmin-graphql.dev /tmp/irmin -y
+  - opam pin /tmp/irmin -y
 
   - make test
 env:
