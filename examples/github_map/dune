@@ -1,0 +1,9 @@
+(test
+	(name test)
+	(libraries
+		alcotest
+    alcotest-lwt
+    cohttp-lwt-unix
+    digestif
+		trace_rpc
+    yojson))
