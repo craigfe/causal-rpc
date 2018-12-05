@@ -121,7 +121,7 @@ module type S = sig
   val remove: key -> t -> t
   val size: t -> int
   val keys: t -> key list
-  val values: t -> Value.t list
+  val values: t -> Value.t list Lwt.t
   val map: ?timeout:float -> 'a Operation.Unboxed.t -> 'a params -> t -> t Lwt.t
 end
 
@@ -271,15 +271,13 @@ module Make
     in Lwt_main.run lwt
 
   let values m =
-    let lwt =
-      Store.tree m
-      >>= fun tree -> Store.Tree.list tree ["vals"]
-      >>= Lwt_list.map_p (fun (x, _) -> Store.get m ["vals"; x])
-      >|= List.map (fun value -> match value with
-          | Value v -> v
-          | _ -> raise Internal_type_error
-        )
-    in Lwt_main.run lwt
+    Store.tree m
+    >>= fun tree -> Store.Tree.list tree ["vals"]
+    >>= Lwt_list.map_p (fun (x, _) -> Store.get m ["vals"; x])
+    >|= List.map (fun value -> match value with
+        | Value v -> v
+        | _ -> raise Internal_type_error
+      )
 
   let get_task_queue m =
     Store.find m ["task_queue"]

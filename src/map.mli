@@ -131,7 +131,7 @@ module type S = sig
   val keys: t -> key list
   (** Return a list of keys in the map *)
 
-  val values: t -> Value.t list
+  val values: t -> Value.t list Lwt.t
   (** Return a list of values in the map *)
 
   val map: ?timeout:float -> 'a Operation.Unboxed.t -> 'a params -> t -> t Lwt.t
