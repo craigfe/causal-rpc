@@ -20,6 +20,7 @@ val array: 'a t -> 'a array t
 val list: 'a t -> 'a list t
 val option: 'a t -> 'a option t
 val result: 'a t -> 'b t -> ('a, 'b) result t
+val func: 'a t -> 'b t -> ('a -> 'b) t
 
 type (_, _) eq = Eq: ('a, 'a) eq
 val refl: 'a t -> 'b t -> ('a, 'b) eq option

@@ -19,6 +19,7 @@ type _ t =
   | List      : 'a t -> 'a list t
   | Option    : 'a t -> 'a option t
   | Result    : ('a t * 'b t) -> ('a, 'b) result t
+  | Func      : ('a t * 'b t) -> ('a -> 'b) t
 
 type 'a equal = 'a -> 'a -> bool
 
@@ -48,6 +49,9 @@ module Refl = struct
     | Result (o1, e1), Result (o2, e2) -> (match (t o1 o2, t e1 e2) with
         | (Some Eq, Some Eq) -> Some Eq
         | _ -> None)
+    | Func (i1, o1), Func (i2, o2) -> (match (t i1 i2, t o1 o2) with
+        | (Some Eq, Some Eq) -> Some Eq
+        | _ -> None)
     | _, _ -> None
 
 end
@@ -69,6 +73,8 @@ module Equal = struct
     | Error e1, Error e2 -> e_comp e1 e2
     | _ -> false
 
+  let func a b = false
+
   let rec t: type a. a t -> a equal = function
     | Unit   -> (=)
     | Bool   -> (=)
@@ -83,6 +89,7 @@ module Equal = struct
     | List l  -> list (t l)
     | Option o -> option (t o)
     | Result (o, e) -> result (t o) (t e)
+    | Func (_, _) -> (fun _ _ -> false)
 end
 
 let unit   = Unit
@@ -98,9 +105,11 @@ let array t = Array t
 let list t = List t
 let option t = Option t
 let result o e = Result (o, e)
+let func i o = Func (i, o)
 
 let refl = Refl.t
 let equal = Equal.t
+
 
 module Boxed = struct
   type box =
@@ -117,12 +126,15 @@ module Boxed = struct
     | List of box list
     | Option of box option
     | Result of (box, box) result
+    | Func of (box -> box)
+
+  let irmin_func = Irmin.Type.like Irmin.Type.bytes (fun s -> Marshal.from_bytes s 0) (Marshal.to_bytes 0)
 
   let irmin_t = let open Irmin.Type in
     mu (fun x -> variant "irmin_t"
            (fun bool bytes char float int int32
              int64 string unit array list option
-             result -> function
+             result func -> function
              | Bool b -> bool b
              | Bytes b -> bytes b
              | Char c -> char c
@@ -135,7 +147,8 @@ module Boxed = struct
              | Array a -> array a
              | List l -> list l
              | Option o -> option o
-             | Result r -> result r)
+             | Result r -> result r
+             | Func f -> func f)
                  |~ case1 "Bool" bool (fun b -> Bool b)
                  |~ case1 "Bytes" bytes (fun b -> Bytes b)
                  |~ case1 "Char" char (fun c -> Char c)
@@ -149,6 +162,7 @@ module Boxed = struct
                  |~ case1 "List" (list x) (fun l -> List l)
                  |~ case1 "Option" (option x) (fun o -> Option o)
                  |~ case1 "Result" (result x x) (fun r -> Result r)
+                 |~ case1 "Func" irmin_func (fun f -> Func f)
                  |> sealv)
 
   (* TODO: don't implement this twice. Use Equal.t instead *)
@@ -193,6 +207,7 @@ module Boxed = struct
     | List _ -> invalid_arg "unsupported pretty printer"
     | Result _ -> invalid_arg "unsupported pretty printer"
     | Option _ -> invalid_arg "unsupported pretty printer"
+    | Func _ -> invalid_arg "unsupported pretty printer"
 
   let test_t = Alcotest.testable pp equal
 
