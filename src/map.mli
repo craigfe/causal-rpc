@@ -112,6 +112,11 @@ module type S = sig
       plus a binding of [x] to [y]. If [x] was already bound in [m],
       its previous binding is replaced. *)
 
+  val add_all: ?message:string -> (key * Value.t) list -> t -> t
+  (** [add bind_list m] returns a map containing the same bindings as [m],
+      plus bindings from k to v for all (k, v) in [bind_list]. If any k
+      was already bound in [m], its previous binding is replaced. *)
+
   val find: key -> t -> Value.t
   (** [find x m] returns the current binding of [x] in [m],
       or raises [Not_found] if no such binding exists. *)

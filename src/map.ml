@@ -116,6 +116,7 @@ module type S = sig
   val is_empty: t -> bool
   val mem: key -> t -> bool
   val add: ?message:string -> key -> Value.t -> t -> t
+  val add_all: ?message:string -> (key * Value.t) list -> t -> t
   val find: key -> t -> Value.t
   val remove: key -> t -> t
   val size: t -> int
@@ -202,6 +203,35 @@ module Make
         m
         ["vals"; key]
         (Value value)
+      >>= fun res -> match res with
+      | Ok () -> Lwt.return_unit
+      | Error se -> Lwt.fail @@ Store_error se
+
+    in Lwt_main.run lwt; m
+
+  let add_all ?message kv_list m =
+    let rec contains_duplicates l = (match l with
+      | [] -> false
+      | x::xs -> (List.mem x xs) || contains_duplicates xs)
+
+    in if contains_duplicates kv_list then invalid_arg "Duplicate keys in key/value list";
+
+    let message = (match message with
+        | Some m -> m
+        | None -> Printf.sprintf "Commit to %d keys" (List.length kv_list)) in
+
+    let lwt =
+      (* We construct the commit by folding over the (k,v) list and accumulating a tree *)
+      Lwt_list.fold_right_s
+        (fun (k, v) tree_acc -> Store.Tree.add tree_acc ["vals"; k] (Value v))
+        kv_list
+        Store.Tree.empty
+
+      >>= fun tree -> Store.set_tree
+        ~allow_empty:true
+        ~info:(Irmin_unix.info ~author:"client" "%s" message)
+        m [] tree
+
       >>= fun res -> match res with
       | Ok () -> Lwt.return_unit
       | Error se -> Lwt.fail @@ Store_error se
@@ -332,9 +362,12 @@ module Make
     >>= fun () ->
 
     let inactivity_count = ref 0.0 in
-    let reset_count diff = match diff with
-      | `Added _ -> (inactivity_count := 0.0; Lwt.return_unit)
-      | _ -> Lwt.return_unit in
+
+    (* Here we reset the inactivity count on _any_ change to the branch, regardless
+       of what the commit is. In future, this may be a bad idea. *)
+    let reset_count (_: Sync.commit Irmin.diff) =
+      Logs.warn (fun m -> m "Resetting count");
+      Lwt.return (inactivity_count := 0.0) in
 
     Store.watch branch reset_count
 
