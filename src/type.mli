@@ -16,7 +16,10 @@ val string: string t
 val unit: unit t
 
 (** Basic combinators *)
+val array: 'a t -> 'a array t
 val list: 'a t -> 'a list t
+val option: 'a t -> 'a option t
+val result: 'a t -> 'b t -> ('a, 'b) result t
 
 type (_, _) eq = Eq: ('a, 'a) eq
 val refl: 'a t -> 'b t -> ('a, 'b) eq option
