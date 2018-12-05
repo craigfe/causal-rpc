@@ -51,8 +51,6 @@ let noop_tests _ () =
   Logs.set_level (Some Logs.Info);
   let root = "/tmp/irmin/test_increment/noop/" in
 
-  Lwt_preemptive.simple_init ();
-
   Lwt.pick [
     worker "noop/test-0001";
 
@@ -79,7 +77,6 @@ let noop_tests _ () =
 let increment_tests _ () =
   Misc.set_reporter ();
   Logs.set_level (Some Logs.Info);
-  Lwt_preemptive.simple_init ();
   let root = "/tmp/irmin/test_increment/increment/" in
 
   Lwt.pick [
@@ -121,7 +118,6 @@ let increment_tests _ () =
 let multiply_tests _ () =
   Misc.set_reporter ();
   Logs.set_level (Some Logs.Info);
-  Lwt_preemptive.simple_init ();
   let root = "/tmp/irmin/test_increment/multiply/" in
 
   Lwt.pick [
@@ -141,7 +137,6 @@ let multiply_tests _ () =
 let worker_pool_tests _ () =
   Misc.set_reporter ();
   Logs.set_level (Some Logs.Info);
-  Lwt_preemptive.simple_init ();
   let root = "/tmp/irmin/test_increment/worker_pool/" in
 
   Lwt.pick @@ (worker_pool 4 "worker_pool/test-0001") @ [
@@ -164,7 +159,7 @@ let worker_pool_tests _ () =
     >|= IntMap.values
     >|= List.map Int64.to_int
     >|= List.sort compare
-    >|= Alcotest.(check (list int)) "Multiple request on many keys in parallel"
+    >|= Alcotest.(check (list int)) "Multiple request on many keys concurrently"
       [10; 20; 30; 40; 50; 60; 70; 80; 90; 100; 110; 120]
   ]
 

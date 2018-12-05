@@ -24,7 +24,6 @@ let count_commit_test _ () =
     GithubMap.map commit_count_op Trace_rpc.Interface.Unit m
     >|= fun _ -> ()
   ]
-
   >|= fun _ -> ()
 
 

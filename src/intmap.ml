@@ -17,8 +17,8 @@ let complex_op = declare "complex" Type.(int32 @-> int64 @-> string @-> unit @->
 
 module Definition = struct
   module Val = Int
-  module I = Interface.Description(Int)
-  open I
+  module D = Interface.Description(Int)
+  open D
 
   let api = define [
       describe identity_op;

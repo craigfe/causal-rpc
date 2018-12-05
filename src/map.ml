@@ -352,7 +352,7 @@ module Make
         >>= fun () -> Lwt.fail Timeout
 
       else (* we will wait for a bit *)
-        Logs_lwt.app (fun m -> m "Sleeping for a time of %f, with an activity count of %f. %d tasks remaining" sleep_interval (!inactivity_count) (task_queue_size branch))
+        Logs_lwt.app (fun m -> m "Sleeping for a time of %f, with an inactivity count of %f. %d tasks remaining" sleep_interval (!inactivity_count) (task_queue_size branch))
         >>= fun () -> Lwt_unix.sleep sleep_interval
         >|= (fun () -> (inactivity_count := !inactivity_count +. sleep_interval))
         >>= Lwt_main.yield
