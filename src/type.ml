@@ -4,34 +4,38 @@
    witnesses, one can define equality for syntactically different types. *)
 type (_, _) eq = Eq: ('a, 'a) eq
 
-
-(* An equality test on two values of type 'a *)
-type 'a equal = 'a -> 'a -> bool
-
 (* The primitive types *)
 type 'a prim =
-  | Unit   : unit prim
-  | Bool   : bool prim
-  | Char   : char prim
-  | Int32  : int32 prim
-  | Int64  : int64 prim
-  | String : string prim
+  | Bool      : bool prim
+  | Bytes     : bytes prim
+  | Char      : char prim
+  | Float     : float prim
+  | Int       : int prim
+  | Int32     : int32 prim
+  | Int64     : int64 prim
+  | String    : string prim
+  | Unit      : unit prim
 
 type 'a t =
   | Prim : 'a prim -> 'a t
   | List : 'a t -> 'a list t
+
+type 'a equal = 'a -> 'a -> bool
 
 (* Define a reflexivity relation on types *)
 module Refl = struct
 
   let prim: type a b. a prim -> b prim -> (a, b) eq option = fun a b ->
     match a, b with
-    | Unit  , Unit   -> Some Eq
-    | Bool  , Bool   -> Some Eq
-    | Char  , Char   -> Some Eq
-    | Int32 , Int32  -> Some Eq
-    | Int64 , Int64  -> Some Eq
-    | String, String -> Some Eq
+    | Bool     , Bool      -> Some Eq
+    | Bytes    , Bytes     -> Some Eq
+    | Char     , Char      -> Some Eq
+    | Float    , Float     -> Some Eq
+    | Int      , Int       -> Some Eq
+    | Int32    , Int32     -> Some Eq
+    | Int64    , Int64     -> Some Eq
+    | String   , String    -> Some Eq
+    | Unit     , Unit      -> Some Eq
     | _ -> None
 
   let rec t: type a b. a t -> b t -> (a, b) eq option = fun a b ->
@@ -44,121 +48,114 @@ module Refl = struct
 
 end
 
-let unit   = Prim Unit
-let bool   = Prim Bool
-let char   = Prim Char
-let int32  = Prim Int32
-let int64  = Prim Int64
-let string = Prim String
-let list t = List t
-
-
-let prim_to_irmin_type: type a. a prim -> a Irmin.Type.t =
-  let open Irmin.Type in function
-  | Unit   -> unit
-  | Bool   -> bool
-  | Char   -> char
-  | Int32  -> int32
-  | Int64  -> int64
-  | String -> string
-
-let rec to_irmin_type: type a. a t -> a Irmin.Type.t = function
-  | Prim p -> prim_to_irmin_type p
-  | List elt -> Irmin.Type.list (to_irmin_type elt)
-
-let prim_to_testable: type a. a prim -> a Alcotest.testable =
-  let open Alcotest in function
-    | Unit   -> unit
-    | Bool   -> bool
-    | Char   -> char
-    | Int32  -> int32
-    | Int64  -> int64
-    | String -> string
-
-let rec to_testable: type a. a t -> a Alcotest.testable = function
-  | Prim p -> prim_to_testable p
-  | List elt -> Alcotest.list (to_testable elt)
-
 module Equal = struct
-  let unit _ _ = true
-  let bool  (x:bool) (y:bool) = x = y
-  let char  (x:char) (y:char) = x = y
-  let int32 (x:int32) (y:int32) = x = y
-  let int64 (x:int64) (y:int64) = x = y
-  let string x y = x == y || String.equal x y
-  let list e x y = x == y || (List.length x = List.length y && List.for_all2 e x y)
-
   let prim: type a. a prim -> a equal = function
-    | Unit   -> unit
-    | Bool   -> bool
-    | Char   -> char
-    | Int32  -> int32
-    | Int64  -> int64
-    | String -> string
+    | Unit   -> (=)
+    | Bool   -> (=)
+    | Bytes  -> (=)
+    | Char   -> (=)
+    | Float  -> (=) (* N.B. Equality is ill-defined on floats *)
+    | Int    -> (=)
+    | Int32  -> (=)
+    | Int64  -> (=)
+    | String -> String.equal
+
+  let list e x y = x == y || (List.length x = List.length y && List.for_all2 e x y)
 
   let rec t: type a. a t -> a equal = function
     | Prim p    -> prim p
     | List l    -> list (t l)
 end
 
+let unit   = Prim Unit
+let bool   = Prim Bool
+let bytes  = Prim Bytes
+let char   = Prim Char
+let float  = Prim Float
+let int    = Prim Int
+let int32  = Prim Int32
+let int64  = Prim Int64
+let string = Prim String
+let list t = List t
+
 let refl = Refl.t
 let equal = Equal.t
 
 module Boxed = struct
   type box =
-    | List of box list
-    | Unit of unit
     | Bool of bool
+    | Bytes of bytes
     | Char of char
+    | Float of float
+    | Int of int
     | Int32 of int32
     | Int64 of int64
     | String of string
+    | Unit of unit
+    | List of box list
 
   let irmin_t = let open Irmin.Type in
-    mu (fun x -> variant "irmin_t" (fun list unit bool char int32 int64 string -> function
-        | List l -> list l
-        | Unit u -> unit u
+    mu (fun x -> variant "irmin_t" (fun bool bytes char float int int32 int64 string list unit -> function
         | Bool b -> bool b
+        | Bytes b -> bytes b
         | Char c -> char c
+        | Float f -> float f
+        | Int i -> int i
         | Int32 i -> int32 i
         | Int64 i -> int64 i
         | String s -> string s
+        | List l -> list l
+        | Unit u -> unit u
       )
-  |~ case1 "List" (list x) (fun l -> List l)
-  |~ case1 "Unit" unit (fun u -> Unit u)
   |~ case1 "Bool" bool (fun b -> Bool b)
+  |~ case1 "Bytes" bytes (fun b -> Bytes b)
   |~ case1 "Char" char (fun c -> Char c)
+  |~ case1 "Float" float (fun f -> Float f)
+  |~ case1 "Int" int (fun i -> Int i)
   |~ case1 "Int32" int32 (fun i -> Int32 i)
   |~ case1 "Int64" int64 (fun i -> Int64 i)
   |~ case1 "String" string (fun u -> String u)
+  |~ case1 "List" (list x) (fun l -> List l)
+  |~ case1 "Unit" unit (fun u -> Unit u)
   |> sealv)
 
   let rec equal a b = match (a, b) with
-    | List l1, List l2 -> List.fold_right (&&) (List.map2 equal l1 l2) true
-    | Unit (), Unit () -> true
     | Bool b1, Bool b2 -> (b1 == b2)
+    | Bytes b1, Bytes b2 -> (b1 == b2)
     | Char c1, Char c2 -> (c1 == c2)
+    | Float f1, Float f2 -> (f1 == f2)
+    | Int i1, Int i2 -> (i1 == i2)
     | Int32 i1, Int32 i2 -> (i1 == i2)
     | Int64 i1, Int64 i2 -> (i1 == i2)
-    | String s1, String s2 -> (s1 == s2)
+    | String s1, String s2 -> String.equal s1 s2
+    | Unit (), Unit () -> true
+    | List l1, List l2 -> List.fold_right (&&) (List.map2 equal l1 l2) true
     | _ -> false
 
   let pp ppf v = match v with
-    | List _ -> Fmt.pf ppf "List" (* TODO: implement pretty printing properly *)
-    | Unit () -> Fmt.pf ppf "Unit ()"
     | Bool b -> Fmt.pf ppf "Bool %b" b
+    | Bytes b -> Fmt.pf ppf "Bytes %s" (Bytes.to_string b)
     | Char c -> Fmt.pf ppf "Char %c" c
+    | Float f -> Fmt.pf ppf "Float %f" f
+    | Int i -> Fmt.pf ppf "Int %d" i
     | Int32 i -> Fmt.pf ppf "Int32 %ld" i
     | Int64 i -> Fmt.pf ppf "Int64 %Ld" i
     | String s -> Fmt.pf ppf "String %s" s
+    | Unit () -> Fmt.pf ppf "Unit ()"
+
+    | List _ -> invalid_arg "unsupported pretty printer" (* TODO *)
 
   let test_t = Alcotest.testable pp equal
+
   exception Type_error
 
   let prim_box: type a. a prim -> a -> box = function
     | Unit -> (fun u -> Unit u)
     | Bool -> (fun b -> Bool b)
+    | Bytes -> (fun b -> Bytes b)
     | Char -> (fun c -> Char c)
+    | Float -> (fun f -> Float f)
+    | Int -> (fun i -> Int i)
     | Int32 -> (fun i -> Int32 i)
     | Int64 -> (fun i -> Int64 i)
     | String -> (fun s -> String s)
@@ -171,7 +168,10 @@ module Boxed = struct
     match (a, b) with
     | (Unit, Unit u) -> u
     | (Bool, Bool b) -> b
+    | (Bytes, Bytes b) -> b
+    | (Float, Float f) -> f
     | (Char, Char c) -> c
+    | (Int, Int i) -> i
     | (Int32, Int32 i) -> i
     | (Int64, Int64 i) -> i
     | (String, String s) -> s
