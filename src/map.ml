@@ -95,6 +95,7 @@ module type S = sig
      and type contents = Contents.t
      and type branch = string
      and module Git = Irmin_unix.Git.FS.G
+
   module Sync: Irmin.SYNC with type db = Store.t
   module JobQueue: JOB_QUEUE with module Store = Store
   module Operation: Interface.OPERATION with module Val = Value
@@ -104,23 +105,23 @@ module type S = sig
   type 'a params = 'a Interface.MakeOperation(Value).params
 
   (* Here for testing purposes *)
-  val task_queue_is_empty: t -> bool
-  val job_queue_is_empty: t -> bool
-  val generate_task_queue: 'a Operation.Unboxed.t -> 'a params -> t -> (Value.t, queue) contents
+  val task_queue_is_empty: t -> bool Lwt.t
+  val job_queue_is_empty: t -> bool Lwt.t
+  val generate_task_queue: 'a Operation.Unboxed.t -> 'a params -> t -> (Value.t, queue) contents Lwt.t
   (* ------------------------- *)
 
   val of_store: Sync.db -> t
   val to_store: t -> Sync.db
 
-  val empty: ?directory:string -> unit -> t
-  val is_empty: t -> bool
-  val mem: key -> t -> bool
-  val add: ?message:string -> key -> Value.t -> t -> t
-  val add_all: ?message:string -> (key * Value.t) list -> t -> t
-  val find: key -> t -> Value.t
-  val remove: key -> t -> t
-  val size: t -> int
-  val keys: t -> key list
+  val empty: ?directory:string -> unit -> t Lwt.t
+  val is_empty: t -> bool Lwt.t
+  val mem: key -> t -> bool Lwt.t
+  val add: ?message:string -> key -> Value.t -> t -> t Lwt.t
+  val add_all: ?message:string -> (key * Value.t) list -> t -> t Lwt.t
+  val find: key -> t -> Value.t Lwt.t
+  val remove: key -> t -> t Lwt.t
+  val size: t -> int Lwt.t
+  val keys: t -> key list Lwt.t
   val values: t -> Value.t list Lwt.t
   val map: ?timeout:float -> 'a Operation.Unboxed.t -> 'a params -> t -> t Lwt.t
 end
@@ -176,38 +177,33 @@ module Make
     let ret_code = Sys.command ("rm -rf " ^ directory) in begin
       if (ret_code <> 0) then invalid_arg "Unable to delete directory";
 
-      let lwt = Store.Repo.v config
-        >>= fun repo -> Store.of_branch repo "master"
-      in Lwt_main.run lwt
+      Store.Repo.v config
+      >>= fun repo -> Store.of_branch repo "master"
     end
 
   let of_store s = s
   let to_store s = s
 
   let mem key m =
-    let lwt =
-      Store.tree m
-      >>= fun tree -> Store.Tree.list tree ["vals"]
-      >|= List.exists (fun (x,_) -> x = key)
-    in Lwt_main.run lwt
+    Store.tree m
+    >>= fun tree -> Store.Tree.list tree ["vals"]
+    >|= List.exists (fun (x,_) -> x = key)
 
   let add ?message key value m =
     let message = (match message with
         | Some m -> m
         | None -> Printf.sprintf "Commit to key %s" key) in
 
-    let lwt =
-      Store.set
-        ~allow_empty:true
-        ~info:(Irmin_unix.info ~author:"client" "%s" message)
-        m
-        ["vals"; key]
-        (Value value)
-      >>= fun res -> match res with
-      | Ok () -> Lwt.return_unit
-      | Error se -> Lwt.fail @@ Store_error se
+    Store.set
+      ~allow_empty:true
+      ~info:(Irmin_unix.info ~author:"client" "%s" message)
+      m
+      ["vals"; key]
+      (Value value)
 
-    in Lwt_main.run lwt; m
+    >>= fun res -> match res with
+    | Ok () -> Lwt.return m
+    | Error se -> Lwt.fail @@ Store_error se
 
   let add_all ?message kv_list m =
     let rec contains_duplicates l = (match l with
@@ -220,55 +216,46 @@ module Make
         | Some m -> m
         | None -> Printf.sprintf "Commit to %d keys" (List.length kv_list)) in
 
-    let lwt =
-      (* We construct the commit by folding over the (k,v) list and accumulating a tree *)
-      Lwt_list.fold_right_s
-        (fun (k, v) tree_acc -> Store.Tree.add tree_acc ["vals"; k] (Value v))
-        kv_list
-        Store.Tree.empty
+    (* We construct the commit by folding over the (k,v) list and accumulating a tree *)
+    Lwt_list.fold_right_s
+      (fun (k, v) tree_acc -> Store.Tree.add tree_acc ["vals"; k] (Value v))
+      kv_list
+      Store.Tree.empty
 
-      >>= fun tree -> Store.set_tree
-        ~allow_empty:true
-        ~info:(Irmin_unix.info ~author:"client" "%s" message)
-        m [] tree
+    >>= fun tree -> Store.set_tree
+      ~allow_empty:true
+      ~info:(Irmin_unix.info ~author:"client" "%s" message)
+      m [] tree
 
-      >>= fun res -> match res with
-      | Ok () -> Lwt.return_unit
-      | Error se -> Lwt.fail @@ Store_error se
-
-    in Lwt_main.run lwt; m
+    >>= fun res -> (match res with
+    | Ok () -> Lwt.return m
+    | Error se -> Lwt.fail @@ Store_error se)
 
   let find key m =
-    let lwt =
       (* Get the value from the store and deserialise it *)
-      Store.get m ["vals"; key]
-      >>= fun value -> match value with
-      | Value v -> Lwt.return v
-      | _ -> Lwt.fail Internal_type_error
+      Store.find m ["vals"; key]
 
-    in try
-      Lwt_main.run lwt
-    with Invalid_argument _ -> raise Not_found
+      >>= fun value -> match value with
+      | Some (Value v) -> Lwt.return v
+      | Some _ -> Lwt.fail Internal_type_error
+      | None -> Lwt.fail Not_found
 
   let remove _ _ = invalid_arg "TODO"
 
   let size m =
-    let lwt =
-      Store.tree m
-      >>= fun tree -> Store.Tree.list tree ["vals"]
-      (* >|= List.filter (fun (_, typ) -> typ = `Contents) *)
-      >|= List.length
-    in Lwt_main.run lwt
+    Store.tree m
+    >>= fun tree -> Store.Tree.list tree ["vals"]
+    (* >|= List.filter (fun (_, typ) -> typ = `Contents) *)
+    >|= List.length
 
   let is_empty m =
-    (size m) == 0
+    size m
+    >|= (=) 0
 
   let keys m =
-    let lwt =
       Store.tree m
       >>= fun tree -> Store.Tree.list tree ["vals"]
       >|= List.map(fst)
-    in Lwt_main.run lwt
 
   let values m =
     Store.tree m
@@ -283,44 +270,39 @@ module Make
     Store.find m ["task_queue"]
     >>= fun q -> match q with
     | Some Task_queue tq -> Lwt.return tq
-    | Some _ -> Lwt.fail Internal_type_error
-    | None -> Lwt.return ([], [])
+    | _ -> Lwt.fail Internal_type_error
 
   let task_queue_is_empty branch =
-    let lwt =
-      get_task_queue branch
-      >|= fun q -> match q with
-      | ([], []) -> true
-      | _ -> false
-    in Lwt_main.run lwt
+    get_task_queue branch
+    >|= fun q -> match q with
+    | ([], []) -> true
+    | _ -> false
 
   let task_queue_size branch =
-    let lwt =
-      get_task_queue branch
-      >|= fun (a, b) -> (List.length a) + (List.length b)
-    in Lwt_main.run lwt
+    get_task_queue branch
+    >|= fun (a, b) -> (List.length a) + (List.length b)
 
   let job_queue_is_empty m =
-    Lwt_main.run (JobQueue.Impl.is_empty m)
+    JobQueue.Impl.is_empty m
 
   let rec flatten_params: type a. a params -> Type.Boxed.t list = fun ps ->
     match ps with
     | Interface.Unit -> []
     | Interface.Param (typ, p, ps) -> ((Type.Boxed.box typ p)::flatten_params(ps))
 
-  let generate_task_queue: type a. a Operation.Unboxed.t -> a params -> t -> (value, queue) contents = fun operation params map ->
+  let generate_task_queue: type a. a Operation.Unboxed.t -> a params -> t -> (value, queue) contents Lwt.t = fun operation params map ->
     let name = Operation.Unboxed.name operation in
     let param_list = flatten_params params in
 
     keys map
-    |> List.map (fun key -> {name; params = param_list; key})
-    |> (fun ops ->
+    >|= List.map (fun key -> {name; params = param_list; key})
+    >|= (fun ops ->
         Logs.app (fun m -> m "Generated task queue of [%s]"
                      (List.map (fun {name = n; params = _; key = k} ->
                           Printf.sprintf "{name: %s; key: %s}" n k) ops
                       |> String.concat ", "));
         ops)
-    |> fun ops -> Task_queue (ops, []) (* Initially there are no pending operations *)
+    >|= fun ops -> Task_queue (ops, []) (* Initially there are no pending operations *)
 
   let set_task_queue q m =
     Store.set ~info:(Irmin_unix.info ~author:"map" "Specify workload")
@@ -354,7 +336,8 @@ module Make
         | Error `Conflict key -> Lwt.fail_with ("merge conflict on key " ^ key))
 
     (* Generate and commit the task queue *)
-    >>= fun () -> set_task_queue (generate_task_queue operation params m) branch
+    >>= fun () -> generate_task_queue operation params m
+    >>= fun tq -> set_task_queue tq branch
 
     (* Wait for the task queue to be empty *)
     >>= fun () ->
@@ -375,7 +358,8 @@ module Make
 
       let sleep_interval = Pervasives.min (timeout /. 8.0) 1.0 in
 
-      if task_queue_is_empty branch then (* we are done *)
+      task_queue_is_empty branch
+      >>= fun is_empty -> if is_empty then (* we are done *)
         Store.unwatch watch
 
       else if !inactivity_count >= timeout then (* we have been waiting for too long *)
@@ -383,7 +367,9 @@ module Make
         >>= fun () -> Lwt.fail Timeout
 
       else (* we will wait for a bit *)
-        Logs_lwt.app (fun m -> m "Sleeping for a time of %f, with an inactivity count of %f. %d tasks remaining" sleep_interval (!inactivity_count) (task_queue_size branch))
+        task_queue_size branch
+        >>= fun tq_size -> Logs_lwt.app (fun m -> m "Sleeping for a time of %f, with an inactivity count of %f. %d tasks remaining"
+                                            sleep_interval (!inactivity_count) tq_size)
         >>= fun () -> Lwt_unix.sleep sleep_interval
         >|= (fun () -> (inactivity_count := !inactivity_count +. sleep_interval))
         >>= Lwt_main.yield
@@ -396,7 +382,6 @@ module Make
     (* Merge the map branch into master *)
     >>= fun () -> Store.merge_with_branch m
       ~info:(Irmin_unix.info ~author: "map" "Job %s complete" map_name) map_name
-
     >>= (fun merge -> match merge with
         | Ok () -> Lwt.return_unit
         | Error `Conflict key -> Lwt.fail_with ("merge conflict on key " ^ key))

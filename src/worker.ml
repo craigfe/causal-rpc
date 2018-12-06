@@ -22,6 +22,8 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
   module I = Interface.MakeImplementation(Impl.Val)
 
+  exception Push_error of Sync.push_error
+
   (** Get an Irmin.store at a local or remote URI. *)
   let upstream uri branch =
 
@@ -57,11 +59,18 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     >>= fun q -> match q with
     | Some Task_queue ((x::xs), pending) ->
       Store.set local_br
-        ~info:(Irmin_unix.info ~author:worker_name "Consume task on key %s" x.key)
+        ~info:(Irmin_unix.info ~author:worker_name "Consume <%s> task on key %s" x.name x.key)
         ["task_queue"]
         (Task_queue (xs, x::pending))
+
       >>= fun res -> (match res with
-          | Ok () -> Sync.push_exn local_br remote
+          | Ok () -> Lwt.return_unit
+
+            (* Sync.push local_br remote
+             * >>= fun res -> (match res with
+             * | Ok () -> Lwt.return_unit
+             * | Error pe -> Lwt.fail @@ Push_error pe) *)
+
           | Error se -> Lwt.fail @@ Store_error se)
 
       >|= fun () -> Some x
@@ -72,6 +81,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
   (* TODO: do this as part of a transaction *)
   let remove_pending_task task local_br worker_name =
+
     Store.get local_br ["task_queue"]
     >>= (fun q -> match q with
         | Task_queue (todo, pending) ->
@@ -158,18 +168,22 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
       >>= fun task -> match task with
 
       | Some t -> begin
-          Logs_lwt.info ?src (fun m -> m "Starting to perform task")
+          Logs_lwt.info ?src (fun m -> m "Starting to perform <%s> on key %s" t.name t.key)
           >>= fun () -> perform_task local_br t worker_name
-          >>= fun br -> Logs_lwt.info ?src @@ fun m -> m "Completed task. Removing from pending queue"
+          >>= fun br -> Logs_lwt.info ?src @@ fun m -> m "Completed <%s> task on key %s. Removing from pending queue" t.name t.key
           >>= fun () -> remove_pending_task t br worker_name
-          >>= fun () -> Logs_lwt.info ?src @@ fun m -> m "Removed task from pending queue"
-          >>= fun () -> Sync.push_exn br remote
+          >>= fun () -> Logs_lwt.info ?src @@ fun m -> m "Removed <%s> task on key %s from pending queue" t.name t.key
+          >>= fun () -> Sync.push br remote
+          >>= fun res -> (match res with
+              | Ok () -> Lwt.return_unit
+              | Error pe -> Lwt.fail @@ Push_error pe
+            )
           >>= fun () -> Logs_lwt.info ?src @@ fun m -> m "Changes pushed to branch %s" br_name
           >>= Lwt_main.yield
           >>= task_exection_loop
         end
 
-      | None -> Logs_lwt.info ?src @@ fun m -> m "No pending tasks in the task queue."
+      | None -> Logs_lwt.info ?src @@ fun m -> m "No available tasks in the task queue."
 
     in task_exection_loop ()
 

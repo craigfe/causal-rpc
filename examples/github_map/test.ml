@@ -14,11 +14,11 @@ let count_commit_test _ () =
   let root = global_root ^ "commit_count/" in
 
   GithubMap.empty ~directory:(root ^ "test-0001") ()
-  |> fun m -> Github.get_repos
+  >>= fun m -> Github.get_repos
 
   (* Temporary hack until we have input/output variant types *)
   >|= List.map (fun (name, url) -> (name, (url, 0)))
-  >|= (fun repos -> GithubMap.add_all repos m)
+  >>= (fun repos -> GithubMap.add_all repos m)
   >>= fun m -> Lwt.pick [
     worker "commit_count/test-0001";
     GithubMap.map commit_count_op Trace_rpc.Interface.Unit m

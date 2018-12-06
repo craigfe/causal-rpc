@@ -27,7 +27,7 @@ let basic_tests _ () =
   let root = "/tmp/irmin/increment/" in
 
   IntMap.empty ~directory:(root ^ "test-0001") ()
-  |> IntMap.map increment_op Interface.Unit
+  >>= IntMap.map increment_op Interface.Unit
   >|= (fun _ -> Alcotest.(check pass "Calling map on an empty Map terminates" () ()))
 
 
@@ -39,8 +39,8 @@ let timeout_tests () =
 
   try Lwt_main.run (
       IntMap.empty ~directory:(root ^ "test-0001") ()
-      |> IntMap.add "unchanged" Int64.one
-      |> IntMap.map ~timeout:epsilon_float increment_op Interface.Unit
+      >>= IntMap.add "unchanged" Int64.one
+      >>= IntMap.map ~timeout:epsilon_float increment_op Interface.Unit
       >|= fun _ -> Alcotest.(fail descr))
 
   with Map.Timeout -> Alcotest.(check pass descr Map.Timeout Map.Timeout)
@@ -54,27 +54,30 @@ let noop_tests _ () =
   Logs.set_level (Some Logs.Info);
   let root = "/tmp/irmin/test_increment/noop/" in
 
-  Lwt.pick [
+  empty ~directory:(root ^ "test-0001") ()
+  >>= add "a" Int64.one
+  >>= fun m -> Lwt.pick [
     worker "noop/test-0001";
 
-    empty ~directory:(root ^ "test-0001") ()
-    |> add "a" Int64.one
-    |> map identity_op Interface.Unit
-    >|= find "a"
-    >|= Alcotest.(check int64) "No-op request on a single key" Int64.one
-  ] >>= fun () ->
+    map identity_op Interface.Unit m
+    >|= fun _ -> ()
+  ]
 
-  Lwt.pick [
+  >>= fun () -> find "a" m
+  >|= Alcotest.(check int64) "No-op request on a single key" Int64.one
+
+  >>= fun () -> empty ~directory:(root ^ "test-0002") ()
+  >>= add "a" Int64.one
+  >>= fun m -> Lwt.pick [
     worker "noop/test-0002";
 
-    empty ~directory:(root ^ "test-0002") ()
-    |> add "a" Int64.one
-    |> map ~timeout:5.0 identity_op Interface.Unit
+    map ~timeout:5.0 identity_op Interface.Unit m
     >>= map ~timeout:5.0 identity_op Interface.Unit
     >>= map ~timeout:5.0 identity_op Interface.Unit
-    >|= find "a"
-    >|= Alcotest.(check int64) "Multiple no-op requests on a single key in series" Int64.one
+    >|= fun _ -> ()
   ]
+  >>= fun _ -> find "a" m
+  >|= Alcotest.(check int64) "Multiple no-op requests on a single key in series" Int64.one
 
 let increment_tests _ () =
   let open IntMap in
@@ -83,89 +86,96 @@ let increment_tests _ () =
   Logs.set_level (Some Logs.Info);
   let root = "/tmp/irmin/test_increment/increment/" in
 
-  Lwt.pick [
+  empty ~directory:(root ^ "test-0001") ()
+  >>= add "a" Int64.zero
+  >>= fun m -> Lwt.pick [
     worker "increment/test-0001";
 
-    empty ~directory:(root ^ "test-0001") ()
-    |> add "a" Int64.zero
-    |> map increment_op Interface.Unit
-    >|= find "a"
-    >|= Alcotest.(check int64) "Increment request on a single key" Int64.one
-  ] >>= fun () ->
+    map increment_op Interface.Unit m
+    >|= fun _ -> ()
+  ]
+  >>= fun () -> find "a" m
+  >|= Alcotest.(check int64) "Increment request on a single key" Int64.one
 
-  Lwt.pick [
+
+  >>= fun () -> empty ~directory:(root ^ "test-0002") ()
+  >>= add "a" Int64.zero
+  >>= fun m -> Lwt.pick [
     worker "increment/test-0002";
 
-    empty ~directory:(root ^ "test-0002") ()
-    |> add "a" Int64.zero
-    |> map increment_op Interface.Unit
+    map increment_op Interface.Unit m
     >>= map increment_op Interface.Unit
     >>= map increment_op Interface.Unit
-    >|= find "a"
-    >|= Alcotest.(check int64) "Multiple increment requests on a single key in series" (Int64.of_int 3)
-  ] >>= fun () ->
+    >|= fun _ -> ()
+  ]
+  >>= fun () -> find "a" m
+  >|= Alcotest.(check int64) "Multiple increment requests on a single key in series" (Int64.of_int 3)
 
-  Lwt.pick [
+  >>= empty ~directory:(root ^ "test-0003")
+  >>= add "a" (Int64.of_int 0)
+  >>= add "b" (Int64.of_int 10)
+  >>= add "c" (Int64.of_int 100)
+  >>= fun m -> Lwt.pick [
     worker "increment/test-0003";
 
-    empty ~directory:(root ^ "test-0003") ()
-    |> add "a" (Int64.of_int 0)
-    |> add "b" (Int64.of_int 10)
-    |> add "c" (Int64.of_int 100)
-    |> map increment_op Interface.Unit
-    >>= values
-    >|= List.map Int64.to_int
-    >|= List.sort compare
-    >|= Alcotest.(check (list int)) "Increment request on multiple keys" [1; 11; 101]
+    map increment_op Interface.Unit m
+    >|= fun _ -> ()
   ]
+  >>= fun () -> values m
+  >|= List.map Int64.to_int
+  >|= List.sort compare
+  >|= Alcotest.(check (list int)) "Increment request on multiple keys" [1; 11; 101]
 
 let multiply_tests _ () =
   Misc.set_reporter ();
   Logs.set_level (Some Logs.Info);
   let root = "/tmp/irmin/test_increment/multiply/" in
 
-  Lwt.pick [
+  IntMap.empty ~directory:(root ^ "test-0001") ()
+  >>= IntMap.add "a" (Int64.of_int 0)
+  >>= IntMap.add "b" (Int64.of_int 10)
+  >>= IntMap.add "c" (Int64.of_int 100)
+  >>= fun m -> Lwt.pick [
     worker "multiply/test-0001";
 
-    IntMap.empty ~directory:(root ^ "test-0001") ()
-    |> IntMap.add "a" (Int64.of_int 0)
-    |> IntMap.add "b" (Int64.of_int 10)
-    |> IntMap.add "c" (Int64.of_int 100)
-    |> IntMap.map multiply_op (Interface.Param (Type.int64, Int64.of_int 5, Interface.Unit))
-    >>= IntMap.values
-    >|= List.map Int64.to_int
-    >|= List.sort compare
-    >|= Alcotest.(check (list int)) "Multiply request on multiple keys" [0; 50; 500]
+    IntMap.map multiply_op (Interface.Param (Type.int64, Int64.of_int 5, Interface.Unit)) m
+    >|= fun _ -> ()
   ]
+  >>= fun () -> IntMap.values m
+  >|= List.map Int64.to_int
+  >|= List.sort compare
+  >|= Alcotest.(check (list int)) "Multiply request on multiple keys" [0; 50; 500]
+
 
 let worker_pool_tests _ () =
   Misc.set_reporter ();
   Logs.set_level (Some Logs.Info);
   let root = "/tmp/irmin/test_increment/worker_pool/" in
 
-  Lwt.pick @@ (worker_pool 4 "worker_pool/test-0001") @ [
-    IntMap.empty ~directory:(root ^ "test-0001") ()
-    |> IntMap.add "a" (Int64.of_int 1)
-    |> IntMap.add "b" (Int64.of_int 2)
-    |> IntMap.add "c" (Int64.of_int 3)
-    |> IntMap.add "d" (Int64.of_int 4)
-    |> IntMap.add "e" (Int64.of_int 5)
-    |> IntMap.add "f" (Int64.of_int 6)
-    |> IntMap.add "g" (Int64.of_int 7)
-    |> IntMap.add "h" (Int64.of_int 8)
-    |> IntMap.add "i" (Int64.of_int 9)
-    |> IntMap.add "j" (Int64.of_int 10)
-    |> IntMap.add "k" (Int64.of_int 11)
-    |> IntMap.add "l" (Int64.of_int 12)
+  IntMap.empty ~directory:(root ^ "test-0001") ()
+  >>= IntMap.add_all
+    ["a", Int64.of_int 1;
+     "b", Int64.of_int 2;
+     "c", Int64.of_int 3;
+     "d", Int64.of_int 4;
+     "e", Int64.of_int 5;
+     "f", Int64.of_int 6;
+     "g", Int64.of_int 7;
+     "h", Int64.of_int 8;
+     "i", Int64.of_int 9;
+     "j", Int64.of_int 10;
+     "k", Int64.of_int 11;
+     "l", Int64.of_int 12]
+  >>= fun m -> Lwt.pick @@ (worker_pool 4 "worker_pool/test-0001") @ [
+      IntMap.map ~timeout:5.0 multiply_op (Interface.Param (Type.int64, Int64.of_int 10, Interface.Unit)) m
+      >|= fun _ -> ()
+    ]
+  >>= fun () -> IntMap.values m
+  >|= List.map Int64.to_int
+  >|= List.sort compare
+  >|= Alcotest.(check (list int)) "Multiple request on many keys concurrently"
+    [10; 20; 30; 40; 50; 60; 70; 80; 90; 100; 110; 120]
 
-    |> IntMap.map ~timeout:5.0 multiply_op (Interface.Param (Type.int64, Int64.of_int 10, Interface.Unit))
-
-    >>= IntMap.values
-    >|= List.map Int64.to_int
-    >|= List.sort compare
-    >|= Alcotest.(check (list int)) "Multiple request on many keys concurrently"
-      [10; 20; 30; 40; 50; 60; 70; 80; 90; 100; 110; 120]
-  ]
 
 let parallel_tests _ () =
   Misc.set_reporter ();
@@ -173,11 +183,11 @@ let parallel_tests _ () =
   let root = "/tmp/irmin/test_increment/parallel/" in
 
   IntMap.empty ~directory:(root ^ "test-0001") ()
-  |> IntMap.add "a" (Int64.of_int 1)
-  |> IntMap.add "b" (Int64.of_int 2)
-  |> IntMap.add "c" (Int64.of_int 3)
+  >>= IntMap.add "a" (Int64.of_int 1)
+  >>= IntMap.add "b" (Int64.of_int 2)
+  >>= IntMap.add "c" (Int64.of_int 3)
 
-  |> IntMap.map ~timeout:60.0 multiply_op (Interface.Param (Type.int64, Int64.of_int 10, Interface.Unit))
+  >>= IntMap.map ~timeout:60.0 multiply_op (Interface.Param (Type.int64, Int64.of_int 10, Interface.Unit))
 
   >>= IntMap.values
   >|= List.map Int64.to_int

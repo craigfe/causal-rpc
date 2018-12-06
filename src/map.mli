@@ -86,9 +86,9 @@ module type S = sig
   exception Store_error of Store.write_error
 
   (* -- TESTING PURPOSES --------------------------------- *)
-  val task_queue_is_empty: t -> bool
-  val job_queue_is_empty: t -> bool
-  val generate_task_queue: 'a Operation.Unboxed.t -> 'a params -> t -> (Value.t, queue) contents
+  val task_queue_is_empty: t -> bool Lwt.t
+  val job_queue_is_empty: t -> bool Lwt.t
+  val generate_task_queue: 'a Operation.Unboxed.t -> 'a params -> t -> (Value.t, queue) contents Lwt.t
   (* ----------------------------------------------------- *)
 
   val of_store: Sync.db -> t
@@ -98,37 +98,37 @@ module type S = sig
   (** Return the underlying store representation. TODO: remove. Nothing should need access
       to this, but it is currently being used by the worker. *)
 
-  val empty: ?directory:string -> unit -> t
+  val empty: ?directory:string -> unit -> t Lwt.t
   (** The empty map. *)
 
-  val is_empty: t -> bool
+  val is_empty: t -> bool Lwt.t
   (** Test whether a map is empty or not. *)
 
-  val mem: key -> t -> bool
+  val mem: key -> t -> bool Lwt.t
   (** [mem x m] returns true iff [m] contains a binding for [x] *)
 
-  val add: ?message:string -> key -> Value.t -> t -> t
+  val add: ?message:string -> key -> Value.t -> t -> t Lwt.t
   (** [add x y m] returns a map containing the same bindings as [m],
       plus a binding of [x] to [y]. If [x] was already bound in [m],
       its previous binding is replaced. *)
 
-  val add_all: ?message:string -> (key * Value.t) list -> t -> t
+  val add_all: ?message:string -> (key * Value.t) list -> t -> t Lwt.t
   (** [add bind_list m] returns a map containing the same bindings as [m],
       plus bindings from k to v for all (k, v) in [bind_list]. If any k
       was already bound in [m], its previous binding is replaced. *)
 
-  val find: key -> t -> Value.t
+  val find: key -> t -> Value.t Lwt.t
   (** [find x m] returns the current binding of [x] in [m],
       or raises [Not_found] if no such binding exists. *)
 
-  val remove: key -> t -> t
+  val remove: key -> t -> t Lwt.t
   (** [remove x m] returns a map containing the same bindings as [m],
       except for [x] which is unbound in the returned map. *)
 
-  val size: t -> int
+  val size: t -> int Lwt.t
   (** Return the number of bindings in the map *)
 
-  val keys: t -> key list
+  val keys: t -> key list Lwt.t
   (** Return a list of keys in the map *)
 
   val values: t -> Value.t list Lwt.t
