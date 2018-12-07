@@ -42,7 +42,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
   let random_name ?src () =
     Misc.generate_rand_string ~length:8 ()
-    |> Pervasives.(^) "worker_"
+    |> Pervasives.(^) "worker--"
     |> fun x -> Logs.info ?src (fun m -> m "No name supplied. Generating random worker name %s" x); x
 
   let directory_from_name ?src name =
@@ -148,7 +148,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
     (* Checkout the branch *)
     let br_name = JobQueue.Impl.job_to_string job in
-    let work_br_name = br_name ^ "--" ^ worker_name in
+    let work_br_name = worker_name in
     let input_remote = upstream client br_name in
     let output_remote = upstream client work_br_name in
 
@@ -206,6 +206,9 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
       ?dir
       ?(poll_freq = 5.0)
       ~client () =
+
+    if String.sub name 0 5 |> String.equal "map--" then
+      invalid_arg "Worker names cannot begin with map--";
 
     let src = if log_source then Some (Logs.Src.create name) else None in
     let dir = match dir with

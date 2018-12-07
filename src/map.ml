@@ -380,11 +380,10 @@ module Make
        the callback. *)
     let watch_callback (br: Store.branch) (_: Sync.commit Irmin.diff) =
 
-      (* First, we check that this wakeup is to do with this branch *)
-      String.length map_name
-      |> String.sub br 0
-      |> String.equal map_name
-      |> fun relevant_branch -> if relevant_branch then begin
+      (* Here we assume that all branches that don't start with 'map--' are worker branches
+      for this map request. In future this may not always be the case *)
+
+      if not (String.sub br 0 5 |> String.equal "map--") then begin
 
         Logs.warn (fun m -> m "Resetting count due to activity on branch %s" br);
         inactivity_count := 0.0;
