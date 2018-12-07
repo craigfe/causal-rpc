@@ -3,7 +3,7 @@ module Int: Irmin.Contents.S with type t = int64 = struct
   type t = int64
   let t = Irmin.Type.int64
 
-  let merge = Irmin.Merge.(option (default t))
+  let merge = Irmin.Merge.(option (idempotent t))
 end
 
 
