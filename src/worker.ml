@@ -61,7 +61,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
       Store.set working_br
         ~info:(Irmin_unix.info ~author:worker_name "Consume <%s> task on key %s" x.name x.key)
         ["task_queue"]
-        (Task_queue (xs, (x, worker_name)::pending))
+        (Task_queue (xs, x::pending))
       >>= fun res -> (match res with
           | Ok () -> Lwt.return_unit
           | Error se -> Lwt.fail @@ Store_error se)
@@ -77,12 +77,10 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
     Store.get local_br ["task_queue"]
     >>= (fun q -> match q with
-        | Task_queue (todo, pending) ->
-          List.filter (fun t -> t <> task) pending
-          |> (fun new_pending -> Map.Task_queue (todo, new_pending))
-          |> Lwt.return
-
+        | Task_queue tq -> Lwt.return tq
         | _ -> Lwt.fail Internal_type_error)
+    >|= (fun (todo, pending) -> Map.Task_queue
+            (todo, List.filter (fun t -> t <> task) pending))
 
     >>= Store.set local_br
       ~info:(Irmin_unix.info ~author:worker_name "Remove pending <%s> on key %s" task.name task.key)
@@ -162,18 +160,19 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
        working_br must be unique, or our work competes with others and all hell breaks loose. *)
     >>= fun local_br -> Sync.pull_exn local_br input_remote `Set
     >>= fun () -> Store.clone ~src:local_br ~dst:(work_br_name)
+    >>= fun working_br ->
 
-    (* TODO: work out why this is necessary after the clone *)
-    >>= fun working_br -> Store.merge_with_branch working_br
-      ~info:(Irmin_unix.info ~author:"worker_ERROR" "This should always be a fast-forward") br_name
-    >>= (fun merge -> match merge with
-        | Ok () -> Lwt.return_unit
-        | Error `Conflict key -> Lwt.fail_with ("merge conflict on key " ^ key))
+    let rec task_exection_loop () =
 
-    >>= fun () -> let rec task_exection_loop () =
+      Sync.pull_exn local_br input_remote `Set
+      >>= fun () -> Store.merge_with_branch working_br
+        ~info:(Irmin_unix.info ~author:"worker_ERROR" "This should always be a fast-forward") br_name
+      >>= (fun merge -> match merge with
+          | Ok () -> Lwt.return_unit
+          | Error `Conflict key -> Lwt.fail_with ("merge conflict on key " ^ key))
 
       (* Attempt to take a task from the queue *)
-      get_task_opt working_br working_br input_remote worker_name
+      >>= fun () -> get_task_opt working_br working_br input_remote worker_name
       >>= fun task -> match task with
 
       | Some t -> begin
