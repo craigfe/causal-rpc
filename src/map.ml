@@ -76,6 +76,7 @@ module MakeContents (Val: Irmin.Contents.S) (JQueueType: QUEUE_TYPE): Irmin.Cont
 end
 
 exception Malformed_params of string
+exception Protocol_error of string
 exception Timeout
 
 module type S = sig
@@ -344,13 +345,35 @@ module Make
 
     let inactivity_count = ref 0.0 in
 
-    (* Here we reset the inactivity count on _any_ change to the branch, regardless
-       of what the commit is. In future, this may be a bad idea. *)
-    let reset_count (_: Sync.commit Irmin.diff) =
-      Logs.warn (fun m -> m "Resetting count");
-      Lwt.return (inactivity_count := 0.0) in
+    (* The callback to be executed when we detect changes to the repository.
+       Note: here we don't explicitly signal the workers that are available for a
+       map, so we have to watch for any changes in the repo and then filter within
+       the callback. *)
+    let watch_callback (br: Store.branch) (_: Sync.commit Irmin.diff) =
 
-    Store.watch branch reset_count
+      (* First, we check that this wakeup is to do with this branch *)
+      String.length map_name
+      |> String.sub br 0
+      |> String.equal map_name
+      |> fun relevant_branch -> if relevant_branch then begin
+
+        Logs.warn (fun m -> m "Resetting count due to activity on branch %s" br);
+        inactivity_count := 0.0;
+
+        (* Merge the work from this branch *)
+        Store.merge_with_branch branch
+          ~info:(Irmin_unix.info ~author:"map" "Merged work from %s branch" br) br
+
+        >>= fun res -> (match res with
+            | Ok () -> Lwt.return_unit
+            | Error `Conflict key -> Lwt.fail_with ("merge conflict on key " ^ key))
+
+      end else
+        Logs_lwt.warn (fun m -> m "Woke up due to an irrelevant branch %s when waiting for work on %s" br map_name)
+
+    in
+
+    Store.Branch.watch_all (Store.repo m) watch_callback
 
     >>= fun watch -> Logs_lwt.app (fun m -> m "Waiting for the task queue to be empty, with timeout %f" timeout)
     >>= fun () ->

@@ -4,7 +4,6 @@ module type W = sig
   open Map
 
   include Map.S
-  val get_task_opt: Sync.db -> Irmin.remote -> string -> task option Lwt.t
   val perform_task: Sync.db -> task -> string -> Sync.db Lwt.t
   val handle_request: ?src:Logs.src -> Store.repo -> string -> JobQueue.job -> string -> unit Lwt.t
 
@@ -52,25 +51,19 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     Logs.info ?src (fun m -> m "No directory supplied. Using default directory %s" dir);
     dir
 
-  let get_task_opt local_br remote worker_name = (* TODO: implement this all in a transaction *)
+  let get_task_opt local_br working_br remote worker_name = (* TODO: implement this all in a transaction *)
+
     (* Get latest changes to this branch*)
     Sync.pull_exn local_br remote `Set
     >>= fun () -> Store.find local_br ["task_queue"]
     >>= fun q -> match q with
     | Some Task_queue ((x::xs), pending) ->
-      Store.set local_br
+      Store.set working_br
         ~info:(Irmin_unix.info ~author:worker_name "Consume <%s> task on key %s" x.name x.key)
         ["task_queue"]
-        (Task_queue (xs, x::pending))
-
+        (Task_queue (xs, (x, worker_name)::pending))
       >>= fun res -> (match res with
           | Ok () -> Lwt.return_unit
-
-            (* Sync.push local_br remote
-             * >>= fun res -> (match res with
-             * | Ok () -> Lwt.return_unit
-             * | Error pe -> Lwt.fail @@ Push_error pe) *)
-
           | Error se -> Lwt.fail @@ Store_error se)
 
       >|= fun () -> Some x
@@ -136,10 +129,11 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
         | Some operation -> operation
         | None -> invalid_arg "Operation not found") in
 
-    Store.get store ["vals"; task.key]
+    Store.find store ["vals"; task.key]
     >>= (fun cont -> (match cont with
-        | Value v -> Lwt.return v
-        | _ -> Lwt.fail Internal_type_error))
+        | Some Value v -> Lwt.return v
+        | Some _ -> Lwt.fail Internal_type_error
+        | None -> Lwt.fail @@ Map.Protocol_error (Printf.sprintf "Value <%s> could not be found when attempting to perform %s operation" task.key task.name)))
 
     >>= fun old_val -> Lwt.return ((pass_params (boxed_mi ()) task.params) old_val)
     >>= fun new_val -> Store.set
@@ -157,23 +151,44 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
     (* Checkout the branch *)
     let br_name = JobQueue.Impl.job_to_string job in
-    let remote = upstream client br_name in
+    let work_br_name = br_name ^ "--" ^ worker_name in
+    let input_remote = upstream client br_name in
+    let output_remote = upstream client work_br_name in
 
     Store.of_branch repo br_name
-    >>= fun local_br ->
-    let rec task_exection_loop () =
+
+    (* We pull remote work into local_br, and perform the work on working_br. The remote then
+       merges our work back into origin/local_br, completing the cycle. NOTE: The name of
+       working_br must be unique, or our work competes with others and all hell breaks loose. *)
+    >>= fun local_br -> Sync.pull_exn local_br input_remote `Set
+    >>= fun () -> Store.clone ~src:local_br ~dst:(work_br_name)
+
+    (* TODO: work out why this is necessary after the clone *)
+    >>= fun working_br -> Store.merge_with_branch working_br
+      ~info:(Irmin_unix.info ~author:"worker_ERROR" "This should always be a fast-forward") br_name
+    >>= (fun merge -> match merge with
+        | Ok () -> Lwt.return_unit
+        | Error `Conflict key -> Lwt.fail_with ("merge conflict on key " ^ key))
+
+    >>= fun () -> let rec task_exection_loop () =
 
       (* Attempt to take a task from the queue *)
-      get_task_opt local_br remote worker_name
+      get_task_opt working_br working_br input_remote worker_name
       >>= fun task -> match task with
 
       | Some t -> begin
-          Logs_lwt.info ?src (fun m -> m "Starting to perform <%s> on key %s" t.name t.key)
-          >>= fun () -> perform_task local_br t worker_name
-          >>= fun br -> Logs_lwt.info ?src @@ fun m -> m "Completed <%s> task on key %s. Removing from pending queue" t.name t.key
-          >>= fun () -> remove_pending_task t br worker_name
+          Logs_lwt.info ?src (fun m -> m "Attempting to consume <%s> on key %s" t.name t.key)
+          >>= fun () -> Sync.push working_br output_remote (* We first tell the remote that we intend to work on this item *)
+          >>= fun res -> (match res with
+              | Ok () -> Lwt.return_unit
+              | Error pe -> Lwt.fail @@ Push_error pe
+            )
+          >>= fun () -> Logs_lwt.info ?src (fun m -> m "Starting to perform <%s> on key %s" t.name t.key)
+          >>= fun () -> perform_task working_br t worker_name
+          >>= fun _  -> Logs_lwt.info ?src @@ fun m -> m "Completed <%s> task on key %s. Removing from pending queue" t.name t.key
+          >>= fun () -> remove_pending_task t working_br worker_name
           >>= fun () -> Logs_lwt.info ?src @@ fun m -> m "Removed <%s> task on key %s from pending queue" t.name t.key
-          >>= fun () -> Sync.push br remote
+          >>= fun () -> Sync.push working_br output_remote
           >>= fun res -> (match res with
               | Ok () -> Lwt.return_unit
               | Error pe -> Lwt.fail @@ Push_error pe

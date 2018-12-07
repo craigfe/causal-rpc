@@ -53,6 +53,7 @@ module MakeContents (Val: Irmin.Contents.S) (JQueue: QUEUE_TYPE): Irmin.Contents
   with type t = (Val.t, JQueue.t) contents
 
 exception Malformed_params of string
+exception Protocol_error of string
 exception Timeout
 
 module type S = sig
