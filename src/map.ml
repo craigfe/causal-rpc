@@ -62,6 +62,8 @@ module MakeContents (Val: Irmin.Contents.S) (JQueueType: QUEUE_TYPE): Irmin.Cont
 
   type t = (Val.t, JQueueType.t) contents
 
+  let task_queue_t = Irmin.Type.(pair (list task) (list task))
+
   let t =
     let open Irmin.Type in
     variant "contents" (fun value task_queue branch_name -> function
@@ -69,11 +71,37 @@ module MakeContents (Val: Irmin.Contents.S) (JQueueType: QUEUE_TYPE): Irmin.Cont
         | Task_queue q -> task_queue q
         | Job_queue js -> branch_name js)
     |~ case1 "Value" Val.t (fun v -> Value v)
-    |~ case1 "Task_queue" (pair (list task) (list task)) (fun q -> Task_queue q)
+    |~ case1 "Task_queue" task_queue_t (fun q -> Task_queue q)
     |~ case1 "Job_queue" JQueueType.t (fun js -> Job_queue js)
     |> sealv
 
-  let merge = Irmin.Merge.(option (default t))
+  let merge_values = Irmin.Merge.(idempotent Val.t)
+  let merge_task_queues = Irmin.Merge.(idempotent task_queue_t)
+
+  let merge ~old t1 t2 =
+
+    let open Irmin.Merge.Infix in
+    old () >>=* fun old ->
+
+    match (old, t1, t2) with
+    | Some Value o, Value a, Value b ->
+
+      (Irmin.Merge.f merge_values) ~old:(Irmin.Merge.promise o) a b
+      >>=* fun x -> Irmin.Merge.ok (Value x)
+
+    | Some Task_queue o, Task_queue a, Task_queue b ->
+
+      (Irmin.Merge.f merge_task_queues) ~old:(Irmin.Merge.promise o) a b
+      >>=* fun x -> Irmin.Merge.ok (Task_queue x)
+
+    (* Irmin.Merge.conflict "%s" (Format.asprintf "old = %a\n\na = %a\n\nb = %a" pp_task_queue o pp_task_queue a pp_task_queue b) *)
+
+    | _, Job_queue _, Job_queue _ -> Irmin.Merge.conflict "Job_queue"
+
+    | _ -> Irmin.Merge.conflict "Different values"
+
+  let merge = Irmin.Merge.(option (v t merge))
+
 end
 
 exception Malformed_params of string
