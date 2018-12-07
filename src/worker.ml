@@ -5,7 +5,6 @@ module type W = sig
 
   include Map.S
   val perform_task: Sync.db -> task -> string -> Sync.db Lwt.t
-  val handle_request: ?src:Logs.src -> Store.repo -> string -> JobQueue.job -> string -> unit Lwt.t
 
   val run:
     ?log_source:bool ->

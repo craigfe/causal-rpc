@@ -360,7 +360,7 @@ module Make
     (* Create a new branch to isolate the operation *)
     >>= fun () -> Store.clone ~src:m ~dst:map_name
     >>= fun branch -> Store.merge_with_branch m
-      ~info:(Irmin_unix.info ~author:"map" "Merged") "master"
+      ~info:(Irmin_unix.info ~author:"map" "Merged") Store.Branch.master
     >>= (fun merge -> match merge with
         | Ok () -> Lwt.return_unit
         | Error `Conflict key -> Lwt.fail_with ("merge conflict on key " ^ key))
@@ -391,7 +391,7 @@ module Make
 
         (* Merge the work from this branch *)
         Store.merge_with_branch branch
-          ~info:(Irmin_unix.info ~author:"map" "Merged work from %s branch" br) br
+          ~info:(Irmin_unix.info ~author:"map" "Merged work from %s into %s" br map_name) br
 
         >>= fun res -> (match res with
             | Ok () -> Lwt.return_unit

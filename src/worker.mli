@@ -7,10 +7,6 @@ module type W = sig
   (** Given a map and a task to be performed on that map *)
   val perform_task: Sync.db -> task -> string -> Sync.db Lwt.t
 
-  (** Checkout br_name in store and pull from client, then perform any work still to
-      do on that branch *)
-  val handle_request: ?src:Logs.src -> Store.repo -> string -> JobQueue.job -> string -> unit Lwt.t
-
   (* --------------------------------------------------------- *)
 
   val run:
