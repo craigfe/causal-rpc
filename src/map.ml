@@ -351,13 +351,9 @@ module Make
 
     keys map
     >|= List.map (fun key -> {name; params = param_list; key})
-    >|= (fun ops ->
-        Logs.app (fun m -> m "Generated task queue of [%s]"
-                     (List.map (fun {name = n; params = _; key = k} ->
-                          Printf.sprintf "{name: %s; key: %s}" n k) ops
-                      |> String.concat ", "));
-        ops)
-    >|= fun ops -> Task_queue (ops, []) (* Initially there are no pending operations *)
+    >>= fun ops -> Logs_lwt.app (fun m -> m "Generated task queue of [%s]"
+                     (List.map show_task ops |> String.concat ", "))
+    >|= fun () -> Task_queue (ops, []) (* Initially there are no pending operations *)
 
   let set_task_queue q m =
     Store.set ~info:(Irmin_unix.info ~author:"map" "Specify workload")
@@ -386,9 +382,10 @@ module Make
     >>= fun () -> Store.clone ~src:m ~dst:map_name
     >>= fun branch -> Store.merge_with_branch m
       ~info:(Irmin_unix.info ~author:"map" "Merged") Store.Branch.master
-    >>= (fun merge -> match merge with
+    >>= fun res -> (match res with
         | Ok () -> Lwt.return_unit
-        | Error `Conflict key -> Lwt.fail_with ("merge conflict on key " ^ key))
+        | Error `Conflict c ->
+          Lwt.fail_with (Printf.sprintf "Conflict when attempting merge from %s into %s: %s" Store.Branch.master map_name c))
 
     (* Generate and commit the task queue *)
     >>= fun () -> generate_task_queue operation params m
@@ -458,9 +455,10 @@ module Make
     (* Merge the map branch into master *)
     >>= fun () -> Store.merge_with_branch m
       ~info:(Irmin_unix.info ~author: "map" "Job %s complete" map_name) map_name
-    >>= (fun merge -> match merge with
+    >>= fun res -> (match res with
         | Ok () -> Lwt.return_unit
-        | Error `Conflict key -> Lwt.fail_with ("merge conflict on key " ^ key))
+        | Error `Conflict c ->
+          Lwt.fail_with (Printf.sprintf "Conflict when attempting merge from %s into %s: %s" map_name Store.Branch.master c))
 
     (* Remove the job from the job queue *)
     >>= fun () -> JobQueue.Impl.pop m
