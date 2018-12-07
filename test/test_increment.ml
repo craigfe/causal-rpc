@@ -16,7 +16,7 @@ let worker_pool n dir =
                ~name:("worker_" ^ (string_of_int n))
                ~dir:("/tmp/irmin/test_increment/worker/" ^ dir ^ "/worker_" ^ (string_of_int n))
                ~client:("file:///tmp/irmin/test_increment/" ^ dir)
-               ~poll_freq:epsilon_float ()
+               ~poll_freq:0.01 ()
       in w :: inner (n-1) dir
   in inner n dir
 
@@ -177,31 +177,13 @@ let worker_pool_tests _ () =
     [10; 20; 30; 40; 50; 60; 70; 80; 90; 100; 110; 120]
 
 
-let parallel_tests _ () =
-  Misc.set_reporter ();
-  Logs.set_level (Some Logs.Info);
-  let root = "/tmp/irmin/test_increment/parallel/" in
-
-  IntMap.empty ~directory:(root ^ "test-0001") ()
-  >>= IntMap.add "a" (Int64.of_int 1)
-  >>= IntMap.add "b" (Int64.of_int 2)
-  >>= IntMap.add "c" (Int64.of_int 3)
-
-  >>= IntMap.map ~timeout:60.0 multiply_op (Interface.Param (Type.int64, Int64.of_int 10, Interface.Unit))
-
-  >>= IntMap.values
-  >|= List.map Int64.to_int
-  >|= List.sort compare
-  >|= Alcotest.(check (list int)) "Multiple request on many keys in parallel"
-    [10; 20; 30]
-
 let tests = [
   Alcotest_lwt.test_case "Workerless tests" `Quick basic_tests;
   "Tests of timeouts", `Quick, timeout_tests;
   Alcotest_lwt.test_case "No-op testing" `Quick noop_tests;
   Alcotest_lwt.test_case "Increment testing" `Quick increment_tests;
   Alcotest_lwt.test_case "Multiply testing" `Quick multiply_tests;
-  Alcotest_lwt.test_case "Worker pool testing" `Slow worker_pool_tests
+  Alcotest_lwt.test_case "Worker pool testing" `Slow worker_pool_tests;
   (* Alcotest_lwt.test_case "Parallel testing" `Quick parallel_tests *)
 ]
 
