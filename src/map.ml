@@ -75,8 +75,31 @@ module MakeContents (Val: Irmin.Contents.S) (JQueueType: QUEUE_TYPE): Irmin.Cont
     |~ case1 "Job_queue" JQueueType.t (fun js -> Job_queue js)
     |> sealv
 
-  let merge_values = Irmin.Merge.(idempotent Val.t)
-  let merge_task_queues = Irmin.Merge.(idempotent task_queue_t)
+  type subset_relation = Subset | Superset | Noninclusive
+
+  (* prefix_list x y is Subset if x is a prefix of y, Superset if y is a strict prefix of y,
+     or Noninclusive if neither is a prefix of the other *)
+  let prefix_list x y =
+    let rec inner a b = match (a, b) with
+    | [], _ -> Subset
+    | _, [] -> Superset
+    | (x::xs), (y::ys) when x = y -> inner xs ys
+    | _ -> Noninclusive
+  in inner x y
+
+  (* suffix_list x y is Subset if x is a suffix of y, Superset if y is a strict suffix of y,
+     or Noninclusive if neither is a suffix of the other *)
+  let suffix_list a b =
+    prefix_list (List.rev a) (List.rev b)
+
+  let merge_task_queues ~old:_ x y =
+    let (todo_x, todo_y) = (fst x, fst y) in
+
+    (* If one todo list is the subset of another, retain the subset *)
+    match suffix_list todo_x todo_y with
+    | Subset -> Irmin.Merge.ok x
+    | Superset -> Irmin.Merge.ok y
+    | Noninclusive -> Irmin.Merge.conflict "Task queues could not be merged"
 
   let merge ~old t1 t2 =
 
@@ -86,18 +109,20 @@ module MakeContents (Val: Irmin.Contents.S) (JQueueType: QUEUE_TYPE): Irmin.Cont
     match (old, t1, t2) with
     | Some Value o, Value a, Value b ->
 
-      (Irmin.Merge.f merge_values) ~old:(Irmin.Merge.promise o) a b
-      >>=* fun x -> Irmin.Merge.ok (Value x)
+      (* TODO: work out why optional merge combinators are default in Irmin.Contents.S *)
+      (Irmin.Merge.f Val.merge) ~old:(Irmin.Merge.promise (Some o)) (Some a) (Some b)
+      >>=* fun x -> (match x with
+      | Some x -> Irmin.Merge.ok (Value x)
+      | None -> invalid_arg "no value")
 
     | Some Task_queue o, Task_queue a, Task_queue b ->
 
-      (Irmin.Merge.f merge_task_queues) ~old:(Irmin.Merge.promise o) a b
+      merge_task_queues ~old:(Irmin.Merge.promise o) a b
       >>=* fun x -> Irmin.Merge.ok (Task_queue x)
 
     (* Irmin.Merge.conflict "%s" (Format.asprintf "old = %a\n\na = %a\n\nb = %a" pp_task_queue o pp_task_queue a pp_task_queue b) *)
 
     | _, Job_queue _, Job_queue _ -> Irmin.Merge.conflict "Job_queue"
-
     | _ -> Irmin.Merge.conflict "Different values"
 
   let merge = Irmin.Merge.(option (v t merge))
