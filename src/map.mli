@@ -7,7 +7,9 @@ type task = {
   name: string;
   params: Type.Boxed.t list;
   key: string;
-}
+} [@@deriving show]
+
+type task_queue [@@deriving show]
 
 type ('v, 'jq) contents =
   | Value of 'v

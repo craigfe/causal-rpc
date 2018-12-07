@@ -6,7 +6,7 @@ type task = {
   name: string;
   params: Type.Boxed.t list;
   key: string;
-}
+} [@@deriving show]
 
 let task =
   let open Irmin.Type in
@@ -16,9 +16,10 @@ let task =
   |+ field "key" string (fun t -> t.key)
   |> sealr
 
+type task_queue = (task list * task list) [@@deriving show]
 type ('v, 'jq) contents =
   | Value of 'v
-  | Task_queue of (task list * task list)
+  | Task_queue of task_queue
   | Job_queue of 'jq
 
 module type QUEUE_TYPE = sig

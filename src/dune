@@ -1,9 +1,10 @@
 (library
 	(name trace_rpc)
 	(public_name trace_rpc)
+	(preprocess (pps ppx_deriving.std))
 	(libraries
-    alcotest
-    digestif.c
+		alcotest
+		digestif.c
 		cmdliner
 		fmt.cli
 		fmt.tty

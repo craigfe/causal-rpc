@@ -26,7 +26,7 @@ val refl: 'a t -> 'b t -> ('a, 'b) eq option
 val equal: 'a t -> 'a equal
 
 module Boxed : sig
-  type box
+  type box [@@deriving show]
   val irmin_t: box Irmin.Type.t
   val test_t: box Alcotest.testable
 
@@ -34,5 +34,5 @@ module Boxed : sig
   val box: 'a t -> 'a -> box
   val unbox: 'a t -> box -> 'a
 
-  type t = box
+  type t = box [@@deriving show]
 end

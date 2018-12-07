@@ -116,7 +116,7 @@ module Boxed = struct
     | Array of box array
     | List of box list
     | Option of box option
-    | Result of (box, box) result
+    | Result of (box, box) result [@@deriving show]
 
   let irmin_t = let open Irmin.Type in
     mu (fun x -> variant "irmin_t"
@@ -177,7 +177,7 @@ module Boxed = struct
         | _ -> false)
     | _ -> false
 
-  let pp ppf v = match v with
+  let pp_cust ppf v = match v with
     | Bool b -> Fmt.pf ppf "Bool %b" b
     | Bytes b -> Fmt.pf ppf "Bytes %s" (Bytes.to_string b)
     | Char c -> Fmt.pf ppf "Char %c" c
@@ -194,7 +194,7 @@ module Boxed = struct
     | Result _ -> invalid_arg "unsupported pretty printer"
     | Option _ -> invalid_arg "unsupported pretty printer"
 
-  let test_t = Alcotest.testable pp equal
+  let test_t = Alcotest.testable pp_cust equal
 
   exception Type_error
 
@@ -236,5 +236,5 @@ module Boxed = struct
     | (Option _, Option None) -> None
     | _ -> raise Type_error
 
-  type t = box
+  type t = box [@@deriving show]
 end
