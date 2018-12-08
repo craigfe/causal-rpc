@@ -1,11 +1,6 @@
 open Lwt.Infix
 
 module type W = sig
-  open Map
-
-  include Map.S
-  val perform_task: Sync.db -> task -> string -> Sync.db Lwt.t
-
   val run:
     ?log_source:bool ->
     ?name:string ->

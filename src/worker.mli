@@ -1,14 +1,4 @@
 module type W = sig
-  open Map
-
-  (* --------------- For testing purposes only --------------- *)
-  include Map.S
-
-  (** Given a map and a task to be performed on that map *)
-  val perform_task: Sync.db -> task -> string -> Sync.db Lwt.t
-
-  (* --------------------------------------------------------- *)
-
   val run:
     ?log_source:bool ->
     ?name:string ->

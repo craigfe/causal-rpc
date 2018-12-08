@@ -407,7 +407,6 @@ module Make
       if String.equal br_name map_name then Lwt.return_unit
       else if not (String.sub br_name  0 5 |> String.equal "map--") then begin
 
-
         Store.of_branch (Store.repo m) br_name
         >>= JobQueue.Impl.peek_opt
         >>= fun job -> (match job with
@@ -429,7 +428,7 @@ module Make
                           (fun m -> m "Woke up due to submitted work for a job %s, but the currently executing job is %s"
                               (JobQueue.Impl.job_to_string j) map_name)
 
-            | None -> Lwt.fail @@ Protocol_error "Received work on branch %s, but there is no job on this branch")
+            | None -> Lwt.fail @@ Protocol_error (Printf.sprintf "Received work on branch %s, but there is no job on this branch" br_name))
 
       end else
         Logs_lwt.warn (fun m -> m "Woke up due to an irrelevant branch %s when waiting for work on %s" br_name map_name)
