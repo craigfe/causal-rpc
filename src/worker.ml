@@ -66,22 +66,16 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     | None -> Lwt.return None (* No task to be performed *)
     | Some _ -> Lwt.fail Internal_type_error
 
-  (* TODO: do this as part of a transaction *)
-  let remove_pending_task task local_br worker_name =
+  (* Take a store_tree and remove a pending task from it *)
+  let remove_pending_task task (store_tree: Store.tree): Store.tree Lwt.t =
 
-    Store.get local_br ["task_queue"]
+    Store.Tree.get store_tree ["task_queue"]
     >>= (fun q -> match q with
         | Task_queue tq -> Lwt.return tq
         | _ -> Lwt.fail Internal_type_error)
     >|= (fun (todo, pending) -> Map.Task_queue
             (todo, List.filter (fun t -> t <> task) pending))
-
-    >>= Store.set local_br
-      ~info:(Irmin_unix.info ~author:worker_name "Remove pending <%s> on key %s" task.name task.key)
-      ["task_queue"]
-    >>= fun res -> (match res with
-        | Ok () -> Lwt.return_unit
-        | Error se -> Lwt.fail @@ Store_error se)
+    >>= Store.Tree.add store_tree ["task_queue"]
 
   (* We have a function of type (param -> ... -> param -> val -> val).
      Here we take the parameters that were passed as part of the RPC and recursively apply them
@@ -115,29 +109,21 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
       in aux func_type func params
 
-  let perform_task store (task:Map.task) worker_name =
+  (* Take a store tree and a task and return the tree with the operation performed *)
+  let perform_task (task:Map.task) (store_tree: Store.tree): Store.tree Lwt.t =
 
     let boxed_mi () = (match I.find_operation_opt task.name Impl.api with
         | Some operation -> operation
         | None -> invalid_arg "Operation not found") in
 
-    Store.find store ["vals"; task.key]
+    Store.Tree.find store_tree ["vals"; task.key]
     >>= (fun cont -> (match cont with
         | Some Value v -> Lwt.return v
         | Some _ -> Lwt.fail Internal_type_error
         | None -> Lwt.fail @@ Map.Protocol_error (Printf.sprintf "Value <%s> could not be found when attempting to perform %s operation" task.key task.name)))
 
     >>= fun old_val -> Lwt.return ((pass_params (boxed_mi ()) task.params) old_val)
-    >>= fun new_val -> Store.set
-      ~allow_empty:true
-      ~info:(Irmin_unix.info ~author:worker_name "Perform <%s> on key %s" task.name task.key)
-      store
-      ["vals"; task.key]
-      (Value new_val)
-
-    >>= fun res -> (match res with
-        | Ok () -> Lwt.return store
-        | Error se -> Lwt.fail @@ Store_error se)
+    >>= fun new_val -> Store.Tree.add store_tree ["vals"; task.key] (Value new_val)
 
   let handle_request ?src repo client job worker_name =
 
@@ -152,7 +138,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
     (* We pull remote work into local_br, and perform the work on working_br. The remote then
        merges our work back into origin/local_br, completing the cycle. NOTE: The name of
-       working_br must be unique, or our work competes with others and all hell breaks loose. *)
+       working_br must be unique, or pushed work overwrites others' and all hell breaks loose. *)
     >>= fun local_br -> Sync.pull_exn local_br input_remote `Set
     >>= fun () -> Store.clone ~src:local_br ~dst:(work_br_name)
     >>= fun working_br ->
@@ -179,15 +165,28 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
               | Error pe -> Lwt.fail @@ Push_error pe
             )
           >>= fun () -> Logs_lwt.info ?src (fun m -> m "Starting to perform <%s> on key %s" t.name t.key)
-          >>= fun () -> perform_task working_br t worker_name
-          >>= fun _  -> Logs_lwt.info ?src @@ fun m -> m "Completed <%s> task on key %s. Removing from pending queue" t.name t.key
-          >>= fun () -> remove_pending_task t working_br worker_name
-          >>= fun () -> Logs_lwt.info ?src @@ fun m -> m "Removed <%s> task on key %s from pending queue" t.name t.key
+
+          (* We get the trees with the performed task and the pending task removed *)
+          >>= fun () -> Store.get_tree working_br []
+          >>= perform_task t
+          >>= remove_pending_task t
+          >>= fun result_tree -> Logs_lwt.info ?src @@ fun m -> m "Completed <%s> task on key %s. Pushing to remote" t.name t.key
+
+          (* Now perform the commit and push to the remote. This commit should never be empty. But for
+             debugging purposes we show empty commits *)
+          >>= fun () -> Store.set_tree ~allow_empty:true
+            ~info:(Irmin_unix.info ~author:worker_name "Perform <%s> task on key %s" t.name t.key)
+            working_br [] result_tree
+
+          >>= fun res -> (match res with
+              | Ok () -> Lwt.return_unit
+              | Error se -> Lwt.fail @@ Store_error se)
+
           >>= fun () -> Sync.push working_br output_remote
           >>= fun res -> (match res with
               | Ok () -> Lwt.return_unit
-              | Error pe -> Lwt.fail @@ Push_error pe
-            )
+              | Error pe -> Lwt.fail @@ Push_error pe)
+
           >>= fun () -> Logs_lwt.info ?src @@ fun m -> m "Changes pushed to branch %s" map_name
           >>= Lwt_main.yield
           >>= task_exection_loop
