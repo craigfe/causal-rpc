@@ -110,7 +110,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
       in aux func_type func params
 
   (* Take a store tree and a task and return the tree with the operation performed *)
-  let perform_task (task:Map.task) (store_tree: Store.tree): Store.tree Lwt.t =
+  let perform_task (task:Task_queue.task) (store_tree: Store.tree): Store.tree Lwt.t =
 
     let boxed_mi () = (match I.find_operation_opt task.name Impl.api with
         | Some operation -> operation

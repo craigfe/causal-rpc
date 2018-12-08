@@ -13,7 +13,7 @@ let test _ () =
     >|= (fun c -> match c with
         | Task_queue (s, []) ->
           (* Mangle the record into nested pairs so that alcotest can check equality *)
-          List.map (fun ({name;params;key}:Map.task) -> (name, (params, key))) s
+          List.map (fun ({name;params;key}:Task_queue.task) -> (name, (params, key))) s
           |> Alcotest.(check (list (pair
                                       Alcotest.pass (* TODO: implement Operation testable *)
                                   (pair (list Type.Boxed.test_t) string)

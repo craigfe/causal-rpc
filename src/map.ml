@@ -2,24 +2,9 @@ open Lwt.Infix
 
 exception Empty_queue
 
-type task = {
-  name: string;
-  params: Type.Boxed.t list;
-  key: string;
-} [@@deriving show]
-
-let task =
-  let open Irmin.Type in
-  record "task" (fun name params key -> { name; params; key })
-  |+ field "name" string (fun t -> t.name)
-  |+ field "params" (list Type.Boxed.irmin_t) (fun t -> t.params)
-  |+ field "key" string (fun t -> t.key)
-  |> sealr
-
-type task_queue = (task list * task list) [@@deriving show]
 type ('v, 'jq) contents =
   | Value of 'v
-  | Task_queue of task_queue
+  | Task_queue of Task_queue.t
   | Job_queue of 'jq
 
 module type QUEUE_TYPE = sig
@@ -62,7 +47,6 @@ module MakeContents (Val: Irmin.Contents.S) (JQueueType: QUEUE_TYPE): Irmin.Cont
 
   type t = (Val.t, JQueueType.t) contents
 
-  let task_queue_t = Irmin.Type.(pair (list task) (list task))
 
   let t =
     let open Irmin.Type in
@@ -71,35 +55,11 @@ module MakeContents (Val: Irmin.Contents.S) (JQueueType: QUEUE_TYPE): Irmin.Cont
         | Task_queue q -> task_queue q
         | Job_queue js -> branch_name js)
     |~ case1 "Value" Val.t (fun v -> Value v)
-    |~ case1 "Task_queue" task_queue_t (fun q -> Task_queue q)
+    |~ case1 "Task_queue" Task_queue.t (fun q -> Task_queue q)
     |~ case1 "Job_queue" JQueueType.t (fun js -> Job_queue js)
     |> sealv
 
-  type subset_relation = Subset | Superset | Noninclusive
 
-  (* prefix_list x y is Subset if x is a prefix of y, Superset if y is a strict prefix of y,
-     or Noninclusive if neither is a prefix of the other *)
-  let prefix_list x y =
-    let rec inner a b = match (a, b) with
-    | [], _ -> Subset
-    | _, [] -> Superset
-    | (x::xs), (y::ys) when x = y -> inner xs ys
-    | _ -> Noninclusive
-  in inner x y
-
-  (* suffix_list x y is Subset if x is a suffix of y, Superset if y is a strict suffix of y,
-     or Noninclusive if neither is a suffix of the other *)
-  let suffix_list a b =
-    prefix_list (List.rev a) (List.rev b)
-
-  let merge_task_queues ~old:_ x y =
-    let (todo_x, todo_y) = (fst x, fst y) in
-
-    (* If one todo list is the subset of another, retain the subset *)
-    match suffix_list todo_x todo_y with
-    | Subset -> Irmin.Merge.ok x
-    | Superset -> Irmin.Merge.ok y
-    | Noninclusive -> Irmin.Merge.conflict "Task queues could not be merged"
 
   let merge ~old t1 t2 =
 
@@ -112,12 +72,12 @@ module MakeContents (Val: Irmin.Contents.S) (JQueueType: QUEUE_TYPE): Irmin.Cont
       (* TODO: work out why optional merge combinators are default in Irmin.Contents.S *)
       (Irmin.Merge.f Val.merge) ~old:(Irmin.Merge.promise (Some o)) (Some a) (Some b)
       >>=* fun x -> (match x with
-      | Some x -> Irmin.Merge.ok (Value x)
-      | None -> invalid_arg "no value")
+          | Some x -> Irmin.Merge.ok (Value x)
+          | None -> invalid_arg "no value")
 
     | Some Task_queue o, Task_queue a, Task_queue b ->
 
-      merge_task_queues ~old:(Irmin.Merge.promise o) a b
+      Task_queue.merge ~old:(Irmin.Merge.promise o) a b
       >>=* fun x -> Irmin.Merge.ok (Task_queue x)
 
     (* Irmin.Merge.conflict "%s" (Format.asprintf "old = %a\n\na = %a\n\nb = %a" pp_task_queue o pp_task_queue a pp_task_queue b) *)
@@ -226,7 +186,7 @@ module Make
     let config = Irmin_git.config ~bare:true directory in
 
     if String.sub directory 0 11 <> "/tmp/irmin/"
-       then invalid_arg ("Supplied directory (" ^ directory ^ ") must be in /tmp/irmin/");
+    then invalid_arg ("Supplied directory (" ^ directory ^ ") must be in /tmp/irmin/");
 
     (* Delete the directory if it already exists... Unsafe! *)
     let ret_code = Sys.command ("rm -rf " ^ directory) in begin
@@ -262,8 +222,8 @@ module Make
 
   let add_all ?message kv_list m =
     let rec contains_duplicates l = (match l with
-      | [] -> false
-      | x::xs -> (List.mem x xs) || contains_duplicates xs)
+        | [] -> false
+        | x::xs -> (List.mem x xs) || contains_duplicates xs)
 
     in if contains_duplicates kv_list then invalid_arg "Duplicate keys in key/value list";
 
@@ -283,17 +243,17 @@ module Make
       m [] tree
 
     >>= fun res -> (match res with
-    | Ok () -> Lwt.return m
-    | Error se -> Lwt.fail @@ Store_error se)
+        | Ok () -> Lwt.return m
+        | Error se -> Lwt.fail @@ Store_error se)
 
   let find key m =
-      (* Get the value from the store and deserialise it *)
-      Store.find m ["vals"; key]
+    (* Get the value from the store and deserialise it *)
+    Store.find m ["vals"; key]
 
-      >>= fun value -> match value with
-      | Some (Value v) -> Lwt.return v
-      | Some _ -> Lwt.fail Internal_type_error
-      | None -> Lwt.fail Not_found
+    >>= fun value -> match value with
+    | Some (Value v) -> Lwt.return v
+    | Some _ -> Lwt.fail Internal_type_error
+    | None -> Lwt.fail Not_found
 
   let remove _ _ = invalid_arg "TODO"
 
@@ -308,9 +268,9 @@ module Make
     >|= (=) 0
 
   let keys m =
-      Store.tree m
-      >>= fun tree -> Store.Tree.list tree ["vals"]
-      >|= List.map(fst)
+    Store.tree m
+    >>= fun tree -> Store.Tree.list tree ["vals"]
+    >|= List.map(fst)
 
   let values m =
     Store.tree m
@@ -346,13 +306,14 @@ module Make
     | Interface.Param (typ, p, ps) -> ((Type.Boxed.box typ p)::flatten_params(ps))
 
   let generate_task_queue: type a. a Operation.Unboxed.t -> a params -> t -> (value, queue) contents Lwt.t = fun operation params map ->
+    let open Task_queue in
     let name = Operation.Unboxed.name operation in
     let param_list = flatten_params params in
 
     keys map
     >|= List.map (fun key -> {name; params = param_list; key})
     >>= fun ops -> Logs_lwt.app (fun m -> m "Generated task queue of [%s]"
-                     (List.map show_task ops |> String.concat ", "))
+                                    (List.map show_task ops |> String.concat ", "))
     >|= fun () -> Task_queue (ops, []) (* Initially there are no pending operations *)
 
   let set_task_queue q m =
@@ -403,7 +364,7 @@ module Make
     let watch_callback (br_name: Store.branch) (_: Sync.commit Irmin.diff) =
 
       (* Here we assume that all branches that don't start with 'map--' are worker branches
-      for this map request. In future this may not always be the case *)
+         for this map request. In future this may not always be the case *)
       if String.equal br_name map_name then Lwt.return_unit
       else if not (String.sub br_name  0 5 |> String.equal "map--") then begin
 
@@ -412,17 +373,17 @@ module Make
         >>= fun job -> (match job with
             | Some j when String.equal map_name (JobQueue.Impl.job_to_string j) ->
 
-            Logs_lwt.debug (fun m -> m "Resetting count due to activity on branch %s" br_name)
-            >|= (fun () -> inactivity_count := 0.0)
+              Logs_lwt.debug (fun m -> m "Resetting count due to activity on branch %s" br_name)
+              >|= (fun () -> inactivity_count := 0.0)
 
-            (* Merge the work from this branch *)
-            >>= fun () -> Store.merge_with_branch branch
-              ~info:(Irmin_unix.info ~author:"map" "Merged work from %s into %s" br_name map_name) br_name
+              (* Merge the work from this branch *)
+              >>= fun () -> Store.merge_with_branch branch
+                ~info:(Irmin_unix.info ~author:"map" "Merged work from %s into %s" br_name map_name) br_name
 
-            >>= fun res -> (match res with
-                | Ok () -> Lwt.return_unit
-                | Error `Conflict c ->
-                  Lwt.fail_with (Printf.sprintf "Conflict when attempting merge from %s into %s: %s" br_name map_name c))
+              >>= fun res -> (match res with
+                  | Ok () -> Lwt.return_unit
+                  | Error `Conflict c ->
+                    Lwt.fail_with (Printf.sprintf "Conflict when attempting merge from %s into %s: %s" br_name map_name c))
 
             | Some j -> Logs_lwt.warn
                           (fun m -> m "Woke up due to submitted work for a job %s, but the currently executing job is %s"
@@ -481,8 +442,8 @@ module Make
     then Lwt.fail_with "Didn't pop the right job!"
     else Lwt.return_unit
 
-    >>= (fun _ -> Logs_lwt.app @@ fun m -> m "Map operation complete. Branch name %s" map_name)
-    >|= fun () -> m
+      >>= (fun _ -> Logs_lwt.app @@ fun m -> m "Map operation complete. Branch name %s" map_name)
+      >|= fun () -> m
 
   let () = Irmin_unix.set_listen_dir_hook ()
 end

@@ -3,17 +3,10 @@ exception Empty_queue
 
 (** A task is an operation, a list of parameters and a key specifying the value
     on which to perform the operation *)
-type task = {
-  name: string;
-  params: Type.Boxed.t list;
-  key: string;
-} [@@deriving show]
-
-type task_queue [@@deriving show]
 
 type ('v, 'jq) contents =
   | Value of 'v
-  | Task_queue of (task list * task list)
+  | Task_queue of Task_queue.t
   | Job_queue of 'jq
 
 module type QUEUE_TYPE = sig
