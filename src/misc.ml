@@ -34,6 +34,11 @@ let pp_level ppf = function
   | Logs.Info -> Format.pp_print_string ppf "INFO"
   | Logs.Debug -> Format.pp_print_string ppf "DEBUG"
 
+let handle_merge_conflict src_branch dst_branch merge_result = match merge_result with
+  | Ok () -> Lwt.return_unit
+  | Error `Conflict c ->
+    Lwt.fail_with (Printf.sprintf "Conflict when attempting merge from %s into %s: %s" src_branch dst_branch c)
+
 let pp_exec_header =
   let x = match Array.length Sys.argv with
     | 0 -> Filename.basename Sys.executable_name

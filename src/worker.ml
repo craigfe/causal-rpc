@@ -148,10 +148,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
       Sync.pull_exn local_br input_remote `Set
       >>= fun () -> Store.merge_with_branch working_br
         ~info:(Irmin_unix.info ~author:"worker_ERROR" "This should always be a fast-forward") map_name
-      >>= fun res -> (match res with
-          | Ok () -> Lwt.return_unit
-          | Error `Conflict c ->
-            Lwt.fail_with (Printf.sprintf "Conflict when attempting merge from %s into %s: %s" work_br_name map_name c))
+      >>= Misc.handle_merge_conflict work_br_name map_name
 
       (* Attempt to take a task from the queue *)
       >>= fun () -> get_task_opt working_br working_br input_remote worker_name

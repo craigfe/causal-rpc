@@ -343,10 +343,7 @@ module Make
     >>= fun () -> Store.clone ~src:m ~dst:map_name
     >>= fun branch -> Store.merge_with_branch m
       ~info:(Irmin_unix.info ~author:"map" "Merged") Store.Branch.master
-    >>= fun res -> (match res with
-        | Ok () -> Lwt.return_unit
-        | Error `Conflict c ->
-          Lwt.fail_with (Printf.sprintf "Conflict when attempting merge from %s into %s: %s" Store.Branch.master map_name c))
+    >>= Misc.handle_merge_conflict Store.Branch.master map_name
 
     (* Generate and commit the task queue *)
     >>= fun () -> generate_task_queue operation params m
@@ -380,10 +377,7 @@ module Make
               >>= fun () -> Store.merge_with_branch branch
                 ~info:(Irmin_unix.info ~author:"map" "Merged work from %s into %s" br_name map_name) br_name
 
-              >>= fun res -> (match res with
-                  | Ok () -> Lwt.return_unit
-                  | Error `Conflict c ->
-                    Lwt.fail_with (Printf.sprintf "Conflict when attempting merge from %s into %s: %s" br_name map_name c))
+              >>= Misc.handle_merge_conflict br_name map_name
 
             | Some j -> Logs_lwt.warn
                           (fun m -> m "Woke up due to submitted work for a job %s, but the currently executing job is %s"
@@ -428,10 +422,7 @@ module Make
     (* Merge the map branch into master *)
     >>= fun () -> Store.merge_with_branch m
       ~info:(Irmin_unix.info ~author: "map" "Job %s complete" map_name) map_name
-    >>= fun res -> (match res with
-        | Ok () -> Lwt.return_unit
-        | Error `Conflict c ->
-          Lwt.fail_with (Printf.sprintf "Conflict when attempting merge from %s into %s: %s" map_name Store.Branch.master c))
+    >>= Misc.handle_merge_conflict map_name Store.Branch.master
 
     (* Remove the job from the job queue *)
     >>= fun () -> JobQueue.Impl.pop m
