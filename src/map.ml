@@ -400,26 +400,39 @@ module Make
        Note: here we don't explicitly signal the workers that are available for a
        map, so we have to watch for any changes in the repo and then filter within
        the callback. *)
-    let watch_callback (br: Store.branch) (_: Sync.commit Irmin.diff) =
+    let watch_callback (br_name: Store.branch) (_: Sync.commit Irmin.diff) =
 
       (* Here we assume that all branches that don't start with 'map--' are worker branches
       for this map request. In future this may not always be the case *)
+      if String.equal br_name map_name then Lwt.return_unit
+      else if not (String.sub br_name  0 5 |> String.equal "map--") then begin
 
-      if not (String.sub br 0 5 |> String.equal "map--") then begin
 
-        Logs.warn (fun m -> m "Resetting count due to activity on branch %s" br);
-        inactivity_count := 0.0;
+        Store.of_branch (Store.repo m) br_name
+        >>= JobQueue.Impl.peek_opt
+        >>= fun job -> (match job with
+            | Some j when String.equal map_name (JobQueue.Impl.job_to_string j) ->
 
-        (* Merge the work from this branch *)
-        Store.merge_with_branch branch
-          ~info:(Irmin_unix.info ~author:"map" "Merged work from %s into %s" br map_name) br
+            Logs_lwt.debug (fun m -> m "Resetting count due to activity on branch %s" br_name)
+            >|= (fun () -> inactivity_count := 0.0)
 
-        >>= fun res -> (match res with
-            | Ok () -> Lwt.return_unit
-            | Error `Conflict key -> Lwt.fail_with ("merge conflict on key " ^ key))
+            (* Merge the work from this branch *)
+            >>= fun () -> Store.merge_with_branch branch
+              ~info:(Irmin_unix.info ~author:"map" "Merged work from %s into %s" br_name map_name) br_name
+
+            >>= fun res -> (match res with
+                | Ok () -> Lwt.return_unit
+                | Error `Conflict c ->
+                  Lwt.fail_with (Printf.sprintf "Conflict when attempting merge from %s into %s: %s" br_name map_name c))
+
+            | Some j -> Logs_lwt.warn
+                          (fun m -> m "Woke up due to submitted work for a job %s, but the currently executing job is %s"
+                              (JobQueue.Impl.job_to_string j) map_name)
+
+            | None -> Lwt.fail @@ Protocol_error "Received work on branch %s, but there is no job on this branch")
 
       end else
-        Logs_lwt.warn (fun m -> m "Woke up due to an irrelevant branch %s when waiting for work on %s" br map_name)
+        Logs_lwt.warn (fun m -> m "Woke up due to an irrelevant branch %s when waiting for work on %s" br_name map_name)
 
     in
 

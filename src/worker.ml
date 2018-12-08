@@ -147,12 +147,13 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
   let handle_request ?src repo client job worker_name =
 
     (* Checkout the branch *)
-    let br_name = JobQueue.Impl.job_to_string job in
+    let map_name = JobQueue.Impl.job_to_string job in
     let work_br_name = worker_name in
-    let input_remote = upstream client br_name in
+    let input_remote = upstream client map_name in
     let output_remote = upstream client work_br_name in
 
-    Store.of_branch repo br_name
+    Store.Branch.remove repo work_br_name (* We may have used this worker branch earlier. Delete it here to avoid problems *)
+    >>= fun () -> Store.of_branch repo map_name
 
     (* We pull remote work into local_br, and perform the work on working_br. The remote then
        merges our work back into origin/local_br, completing the cycle. NOTE: The name of
@@ -165,10 +166,11 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
       Sync.pull_exn local_br input_remote `Set
       >>= fun () -> Store.merge_with_branch working_br
-        ~info:(Irmin_unix.info ~author:"worker_ERROR" "This should always be a fast-forward") br_name
-      >>= (fun merge -> match merge with
+        ~info:(Irmin_unix.info ~author:"worker_ERROR" "This should always be a fast-forward") map_name
+      >>= fun res -> (match res with
           | Ok () -> Lwt.return_unit
-          | Error `Conflict key -> Lwt.fail_with ("merge conflict on key " ^ key))
+          | Error `Conflict c ->
+            Lwt.fail_with (Printf.sprintf "Conflict when attempting merge from %s into %s: %s" work_br_name map_name c))
 
       (* Attempt to take a task from the queue *)
       >>= fun () -> get_task_opt working_br working_br input_remote worker_name
@@ -191,7 +193,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
               | Ok () -> Lwt.return_unit
               | Error pe -> Lwt.fail @@ Push_error pe
             )
-          >>= fun () -> Logs_lwt.info ?src @@ fun m -> m "Changes pushed to branch %s" br_name
+          >>= fun () -> Logs_lwt.info ?src @@ fun m -> m "Changes pushed to branch %s" map_name
           >>= Lwt_main.yield
           >>= task_exection_loop
         end
