@@ -2,6 +2,7 @@ open Lwt.Infix
 
 module type W = sig
   val run:
+    ?switch:Lwt_switch.t ->
     ?log_source:bool ->
     ?name:string ->
     ?dir:string ->
@@ -194,6 +195,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     in task_exection_loop ()
 
   let run
+      ?switch
       ?(log_source=true)
       ?(name=random_name())
       ?dir
@@ -226,8 +228,13 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
     let rec inner () =
 
+      (* First check that the switch is on, if it exists *)
+      (match switch with
+       | Some s -> if Lwt_switch.is_on s then Lwt.return_unit else Lwt.fail_with "Switch is off"
+       | None -> Lwt.return_unit)
+
       (* Pull and check the map_request file for queued jobs *)
-      Sync.pull_exn master upstr `Set
+      >>= fun () -> Sync.pull_exn master upstr `Set
       >>= fun () -> JobQueue.Impl.peek_opt master
       >>= fun j -> (match j with
 

@@ -1,5 +1,6 @@
 module type W = sig
   val run:
+    ?switch:Lwt_switch.t ->
     ?log_source:bool ->
     ?name:string ->
     ?dir:string ->

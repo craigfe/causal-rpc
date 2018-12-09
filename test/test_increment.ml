@@ -2,17 +2,19 @@ open Lwt.Infix
 open Trace_rpc
 open Intmap
 
-let worker dir = IntWorker.run
+let worker switch dir = IntWorker.run
+    ~switch
     ~dir:("/tmp/irmin/test_increment/worker/" ^ dir)
     ~client:("file:///tmp/irmin/test_increment/" ^ dir)
     ~poll_freq:0.01 ()
 
-let worker_pool n dir =
+let worker_pool switch n dir =
   let rec inner n dir =
     match n with
     | 0 -> []
     | n -> let w =
              IntWorker.run
+               ~switch
                ~name:("worker_" ^ (string_of_int n))
                ~dir:("/tmp/irmin/test_increment/worker/" ^ dir ^ "/worker_" ^ (string_of_int n))
                ~client:("file:///tmp/irmin/test_increment/" ^ dir)
@@ -47,7 +49,7 @@ let timeout_tests () =
 
 
 (** Tests of the scheduling infrastructure and workers, using noops to do 'work' *)
-let noop_tests _ () =
+let noop_tests s () =
   let open IntMap in
 
   Misc.set_reporter ();
@@ -57,7 +59,7 @@ let noop_tests _ () =
   empty ~directory:(root ^ "test-0001") ()
   >>= add "a" Int64.one
   >>= fun m -> Lwt.pick [
-    worker "noop/test-0001";
+    worker s "noop/test-0001";
 
     map identity_op Interface.Unit m
     >|= fun _ -> ()
@@ -69,7 +71,7 @@ let noop_tests _ () =
   >>= fun () -> empty ~directory:(root ^ "test-0002") ()
   >>= add "a" Int64.one
   >>= fun m -> Lwt.pick [
-    worker "noop/test-0002";
+    worker s "noop/test-0002";
 
     map ~timeout:5.0 identity_op Interface.Unit m
     >>= map ~timeout:5.0 identity_op Interface.Unit
@@ -79,7 +81,7 @@ let noop_tests _ () =
   >>= fun _ -> find "a" m
   >|= Alcotest.(check int64) "Multiple no-op requests on a single key in series" Int64.one
 
-let increment_tests _ () =
+let increment_tests s () =
   let open IntMap in
 
   Misc.set_reporter ();
@@ -89,7 +91,7 @@ let increment_tests _ () =
   empty ~directory:(root ^ "test-0001") ()
   >>= add "a" Int64.zero
   >>= fun m -> Lwt.pick [
-    worker "increment/test-0001";
+    worker s "increment/test-0001";
 
     map increment_op Interface.Unit m
     >|= fun _ -> ()
@@ -101,7 +103,7 @@ let increment_tests _ () =
   >>= fun () -> empty ~directory:(root ^ "test-0002") ()
   >>= add "a" Int64.zero
   >>= fun m -> Lwt.pick [
-    worker "increment/test-0002";
+    worker s "increment/test-0002";
 
     map increment_op Interface.Unit m
     >>= map increment_op Interface.Unit
@@ -116,7 +118,7 @@ let increment_tests _ () =
   >>= add "b" (Int64.of_int 10)
   >>= add "c" (Int64.of_int 100)
   >>= fun m -> Lwt.pick [
-    worker "increment/test-0003";
+    worker s "increment/test-0003";
 
     map increment_op Interface.Unit m
     >|= fun _ -> ()
@@ -126,7 +128,7 @@ let increment_tests _ () =
   >|= List.sort compare
   >|= Alcotest.(check (list int)) "Increment request on multiple keys" [1; 11; 101]
 
-let multiply_tests _ () =
+let multiply_tests s () =
   Misc.set_reporter ();
   Logs.set_level (Some Logs.Info);
   let root = "/tmp/irmin/test_increment/multiply/" in
@@ -136,7 +138,7 @@ let multiply_tests _ () =
   >>= IntMap.add "b" (Int64.of_int 10)
   >>= IntMap.add "c" (Int64.of_int 100)
   >>= fun m -> Lwt.pick [
-    worker "multiply/test-0001";
+    worker s "multiply/test-0001";
 
     IntMap.map multiply_op (Interface.Param (Type.int64, Int64.of_int 5, Interface.Unit)) m
     >|= fun _ -> ()
@@ -147,7 +149,7 @@ let multiply_tests _ () =
   >|= Alcotest.(check (list int)) "Multiply request on multiple keys" [0; 50; 500]
 
 
-let worker_pool_tests _ () =
+let worker_pool_tests s () =
   Misc.set_reporter ();
   Logs.set_level (Some Logs.Info);
   let root = "/tmp/irmin/test_increment/worker_pool/" in
@@ -166,7 +168,7 @@ let worker_pool_tests _ () =
      "j", Int64.of_int 10;
      "k", Int64.of_int 11;
      "l", Int64.of_int 12]
-  >>= fun m -> Lwt.pick @@ (worker_pool 4 "worker_pool/test-0001") @ [
+  >>= fun m -> Lwt.pick @@ (worker_pool s 4 "worker_pool/test-0001") @ [
       IntMap.map ~timeout:5.0 multiply_op (Interface.Param (Type.int64, Int64.of_int 10, Interface.Unit)) m
       >|= fun _ -> ()
     ]

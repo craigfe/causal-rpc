@@ -2,17 +2,19 @@ open Lwt.Infix
 open Trace_rpc
 open Intmap
 
-let worker dir = IntWorker.run
+let worker switch dir = IntWorker.run
+    ~switch
     ~dir:("/tmp/irmin/test_stress/worker/" ^ dir)
     ~client:("file:///tmp/irmin/test_stress/" ^ dir)
     ~poll_freq:0.01 ()
 
-let worker_pool n dir =
+let worker_pool switch n dir =
   let rec inner n dir =
     match n with
     | 0 -> []
     | n -> let w =
              IntWorker.run
+               ~switch
                ~name:("worker_" ^ (string_of_int n))
                ~dir:("/tmp/irmin/test_stress/worker/" ^ dir ^ "/worker_" ^ (string_of_int n))
                ~client:("file:///tmp/irmin/test_stress/" ^ dir)
@@ -20,7 +22,7 @@ let worker_pool n dir =
       in w :: inner (n-1) dir
   in inner n dir
 
-let stress_test _ () =
+let stress_test s () =
   Misc.set_reporter ();
   Logs.set_level (Some Logs.Info);
   let root = "/tmp/irmin/test_stress/stress/" in
@@ -41,7 +43,7 @@ let stress_test _ () =
      "j", Int64.of_int 10;
      "k", Int64.of_int 11;
      "l", Int64.of_int 12]
-  >>= fun m -> Lwt.pick @@ (worker_pool 4 "stress/test-0001") @ [
+  >>= fun m -> Lwt.pick @@ (worker_pool s 4 "stress/test-0001") @ [
     let rec inner n map =
       IntMap.map ~timeout:100.0 increment_op Interface.Unit map
       >>= IntMap.values
