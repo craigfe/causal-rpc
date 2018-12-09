@@ -1,9 +1,12 @@
 
 type task = {
-  name: string;
-  params: Type.Boxed.t list;
+  name: string; [@compare fun _ _ -> 0]
+  params: Type.Boxed.t list; [@compare fun _ _ -> 0]
   key: string;
-} [@@deriving show, eq]
+} [@@deriving eq, ord]
+
+let show_task t = t.key
+let pp_task = Fmt.using show_task Fmt.string
 
 let task =
   let open Irmin.Type in
@@ -13,75 +16,78 @@ let task =
   |+ field "key" string (fun t -> t.key)
   |> sealr
 
+module TaskSet = Set.Make(struct type t = task let compare = compare_task end)
+let pp_taskset = Fmt.using TaskSet.elements (Fmt.braces (Fmt.list ~sep:Fmt.comma pp_task))
+
 let task_testable = Alcotest.testable pp_task equal_task
 
-type t = (task list * task list) [@@deriving show, eq]
+type t = (task list * task list) [@@deriving show]
 let t = Irmin.Type.(pair (list task) (list task))
 let t_testable = Alcotest.(pair (list task_testable) (list task_testable))
 
-type operation = Consume of task | Perform of task [@@deriving show, eq]
+let of_internal = TaskSet.of_list
+let to_internal x = List.sort compare_task (TaskSet.elements x)
+
+(* type internal = TaskSet.t * TaskSet.t *)
+let pp_internal = Fmt.braces @@ Fmt.pair ~sep:Fmt.comma pp_taskset pp_taskset
+
+type operations = {
+  consume: TaskSet.t; [@printer pp_taskset]
+  perform: TaskSet.t; [@printer pp_taskset]
+} [@@deriving show]
 
 let compute_operations ~input ~output =
-  let rec inner x y acc = match x, y with
+  let todo_in = of_internal (fst input) in
+  let pending_in = of_internal (snd input) in
+  let todo_out = of_internal (fst output) in
+  let pending_out = of_internal (snd output) in
 
-    | x, y when equal x y -> Ok (List.rev acc)
+  let (-) = TaskSet.diff in
+  let (+) = TaskSet.union in
 
-    | (t::ts, []), (us, qs) -> inner (ts, [t]) (us, qs) (Consume t::acc)
-    | (ts, p::ps), (us, []) -> inner (ts, ps) (us, []) (Perform p::acc)
+  let consume = todo_in - todo_out in
+  let perform = (todo_in + pending_in) - (todo_out + pending_out) in
+  {consume; perform}
 
-    | (ts, p::ps), (us, qs) when not (List.exists (equal_task p) qs)
-      -> inner (ts, ps) (us, qs) (Perform p::acc)
+let apply_operations (todo, pending) {consume; perform} =
+  let (>) = fun a b -> not (TaskSet.subset a b) in
+  let (-) = TaskSet.diff in
+  let (+) = TaskSet.union in
 
-    | (t::ts, ps), (us, qs) when not (List.exists (equal_task t) us)
-      -> inner (ts, t::ps) (us, qs) (Consume t::acc)
+  if consume > todo then Error "Attempting to consume tasks that don't exist in the todo queue"
+  else if perform > (pending + consume) then Error "Attempting to perform tasks that don't exist in the pending queue"
+  else Ok (todo - consume, (pending + consume) - perform)
 
-    (* | (t::ts, ps), ([], qs) -> inner (ts, t::ps) ([], qs) (Consume t::acc) *)
+let merge_operations x y =
+  let (+) = TaskSet.union in
+  let {consume = consume_x; perform = perform_x} = x in
+  let {consume = consume_y; perform = perform_y} = y in
 
-    | (t::ts, ps), (u::us, qs) when not (equal_task t u)
-      -> inner (ts, t::ps) (u::us, qs) (Consume t::acc)
-
-    | x, y -> Error (Format.asprintf "\nWhen attempting to compute operations from %a\n to %a.\n Could not compute operations from %a\n to %a" pp input pp output pp x pp y)
-
-  in inner input output []
-
-let rec apply_ops queue ops = match queue, ops with
-  | q, [] -> q
-  | (t::ts, ps), (Consume x)::ops when equal_task t x -> apply_ops (ts, t::ps) ops
-  | (ts, p::ps), (Perform x)::ops when equal_task p x -> apply_ops (ts, ps) ops
-  | _ -> invalid_arg (Format.asprintf "Failed to apply %a to %a" (Fmt.list pp_operation) ops pp queue)
-
-let rec merge_ops x y = match x, y with
-  | xs, [] -> xs
-  | [], ys -> ys
-  | x::xs, y::ys when equal_operation x y -> x::(merge_ops xs ys)
-  | (Consume x)::xs, (Perform y)::ys when equal_task x y -> (Perform y)::(merge_ops xs ys)
-  | (Perform x)::xs, (Consume y)::ys when equal_task x y -> (Perform x)::(merge_ops xs ys)
-
-  | (Perform x)::xs, ys -> (Perform x)::(merge_ops xs ys)
-  | xs, (Perform y)::ys -> (Perform y)::(merge_ops xs ys)
-
-  | _ -> invalid_arg "Failed to merge ops"
+  {consume = consume_x + consume_y; perform = perform_x + perform_y}
 
 let merge ~old x y =
   let open Irmin.Merge.Infix in
   old () >>=* fun old ->
   let old = match old with None -> ([], []) | Some o -> o in
 
+  Logs.info (fun m -> m "Computing operations from \n%a\n to \n%a\n" pp old pp x);
+
   let ops_x = compute_operations ~input:old ~output:x in
   let ops_y = compute_operations ~input:old ~output:y in
+  let old = (TaskSet.of_list (fst old), TaskSet.of_list (snd old)) in
 
-  let pp_r = (Fmt.result ~ok:(Fmt.list pp_operation) ~error:Fmt.string) in
-  Logs.info (fun m -> m "Merging: [%a] and [%a]"  pp_r ops_x pp_r ops_y);
+  Logs.info (fun m -> m "Merging: \n%a] and \n%a" pp_operations ops_x pp_operations ops_y);
 
-  match ops_x, ops_y with
-  | Ok [], Ok [] -> Irmin.Merge.ok old
-  | Ok _ , Ok [] -> Irmin.Merge.ok x
-  | Ok [], Ok _  -> Irmin.Merge.ok y
-  | Ok x, Ok y ->
-    merge_ops x y
-    |> fun o -> Logs.info (fun m -> m "got merged ops: %a" (Fmt.list pp_operation) o); apply_ops old o
-    |> fun x -> Logs.info (fun m -> m "applied ops to %a to get %a" pp old pp x); Irmin.Merge.ok x
+  merge_operations ops_x ops_y
+  |> (fun o -> begin
+        Logs.info (fun m -> m "got merged ops: %a" pp_operations o);
+        apply_operations old o
+      end)
+  |> (fun x -> begin
+        Logs.info (fun m -> m "applied ops to %a to get %a" pp_internal old (Fmt.result ~ok:pp_internal ~error:Fmt.string) x);
+        match x with
+        | Ok x -> Irmin.Merge.ok (to_internal (fst x), to_internal (snd x))
+        | Error c -> Irmin.Merge.conflict "%s" c
+      end)
 
-  | Error x, _ -> invalid_arg ("Could not compute operations for x: " ^ x)
-  | _, Error y -> invalid_arg ("Could not compute operations for y: " ^ y)
 

@@ -14,7 +14,8 @@ let mk_task k =
   { name = "op_name"; params = []; key = k }
 
 let mk_queue (x, y) =
-  (List.map mk_task x, List.map mk_task y)
+  ( List.sort String.compare x |> List.map mk_task
+  , List.sort String.compare y |> List.map mk_task )
 
 let merge_check ?old ~a ~b ?res description =
   let a = mk_queue a in
@@ -34,9 +35,24 @@ let test_merge _ () =
   Misc.set_reporter ();
   Logs.set_level (Some Logs.Info);
 
-  let a = (["a"; "b"], []) in
-  let b = (["b"], ["a"]) in
+  let a = (["a"], []) in
+  let b = (["a"], []) in
+  merge_check ~a ~b "Identity operation"
+
+  >>= fun () ->
+  let a = (["a"; "b"; "c"], ["d"; "e"; "f"]) in
+  let b = (["a"; "b"; "c"], ["d"; "e"; "f"]) in
+  merge_check ~a ~b "Identity operation 2"
+
+  >>= fun () ->
+  let a = (["a"], []) in
+  let b = ([], ["a"]) in
   merge_check ~a ~b "Single task consumed"
+
+  >>= fun () ->
+  let a = (["a"; "b"], ["c"]) in
+  let b = (["b"], ["a"; "c"]) in
+  merge_check ~a ~b "Single task consumed with prior tasks"
 
   >>= fun () ->
   let a = (["a"; "b"; "c"], []) in
