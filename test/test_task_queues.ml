@@ -1,8 +1,99 @@
 open Lwt.Infix
 open Trace_rpc
+open Trace_rpc.Task_queue
 
-let test _ () =
+type conflict = [
+  | `Conflict of string
+] [@@deriving show]
 
+let conflict_equal (`Conflict a) (`Conflict b) = String.equal a b
+let merge_conflict = Alcotest.testable pp_conflict conflict_equal
+let merge_t = Alcotest.(result t_testable merge_conflict)
+
+let mk_task k =
+  { name = "op_name"; params = []; key = k }
+
+let mk_queue (x, y) =
+  (List.map mk_task x, List.map mk_task y)
+
+let merge_check ?old ~a ~b ?res description =
+  let a = mk_queue a in
+  let b = mk_queue b in
+  let old = match old with (* Default old to a *)
+    | Some o -> Irmin.Merge.promise (mk_queue o)
+    | None -> Irmin.Merge.promise a in
+
+  let res = match res with (* Default res to b *)
+    | Some r -> Ok (mk_queue r)
+    | None -> Ok b in
+
+  merge ~old a b
+  >|= Alcotest.check merge_t description res
+
+let test_merge _ () =
+  Misc.set_reporter ();
+  Logs.set_level (Some Logs.Info);
+
+  let a = (["a"; "b"], []) in
+  let b = (["b"], ["a"]) in
+  merge_check ~a ~b "Single task consumed"
+
+  >>= fun () ->
+  let a = (["a"; "b"; "c"], []) in
+  let b = (["c"], ["b"; "a"]) in
+  merge_check ~a ~b "Multiple tasks consumed"
+
+  >>= fun () ->
+  let a = (["b"], ["a"]) in
+  let b = (["b"], []) in
+  merge_check ~a ~b "Single task performed"
+
+  >>= fun () ->
+  let a = (["c"], ["b"; "a"]) in
+  let b = (["c"], []) in
+  merge_check ~a ~b "Multiple tasks performed"
+
+  >>= fun () ->
+  let a = (["d"; "e"; "f"], ["c"; "b"; "a"]) in
+  let b = (["f"], ["e"]) in
+  merge_check ~a ~b "Multiple tasks consumed and performed"
+
+  >>= fun () ->
+  let old = (["a"; "b"], []) in
+  let a = (["b"], ["a"]) in
+  let b = (["b"], ["a"]) in
+  let res = (["b"], ["a"]) in
+  merge_check ~old ~a ~b ~res "Single task consumed on both branches"
+
+  >>= fun () ->
+  let old = (["a"], ["b"; "c"]) in
+  let a = (["a"], ["c"]) in
+  let b = (["a"], ["c"]) in
+  let res = (["a"], ["c"]) in
+  merge_check ~old ~a ~b ~res "Single task performed on both branches"
+
+  >>= fun () ->
+  let old = (["a"; "b"], []) in
+  let a = (["b"], []) in
+  let b = (["b"], ["a"]) in
+  let res = (["b"], []) in
+  merge_check ~old ~a ~b ~res "Task performed on one branch and consumed on another"
+
+  >>= fun () ->
+  let old = (["a"; "b"], []) in
+  let a = (["b"], ["a"]) in
+  let b = (["b"], []) in
+  let res = (["b"], []) in
+  merge_check ~old ~a ~b ~res "Task consumed on one branch and completed on another"
+
+  >>= fun () ->
+  let old = (["a"; "b"], ["c"; "d"]) in
+  let a = ([], ["a"; "b"; "c"; "d"]) in
+  let b = (["a"; "b"], []) in
+  let res = ([], ["c"; "r"]) in
+  merge_check ~old ~a ~b ~res "Multiple tasks consumed on one branch and performed on another"
+
+let test_map _ () =
   let open Intmap in begin
     let root = "/tmp/irmin/task_queues/" in
 
@@ -24,3 +115,9 @@ let test _ () =
         | _ -> Alcotest.fail "Generate_task_queue returned a non-task value");
 
   end
+
+
+let tests = [
+  Alcotest_lwt.test_case "Merge functions" `Quick test_merge;
+  Alcotest_lwt.test_case "Map task queue format" `Quick test_map;
+]
