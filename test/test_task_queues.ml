@@ -88,10 +88,24 @@ let test_merge _ () =
 
   >>= fun () ->
   let old = (["a"; "b"], ["c"; "d"]) in
-  let a = ([], ["a"; "b"; "c"; "d"]) in
+  let a = ([], ["b"; "a"; "c"; "d"]) in
   let b = (["a"; "b"], []) in
-  let res = ([], ["c"; "r"]) in
+  let res = ([], ["b"; "a"]) in
   merge_check ~old ~a ~b ~res "Multiple tasks consumed on one branch and performed on another"
+
+  >>= fun () ->
+  let old = (["a"; "b"], ["c"; "d"]) in
+  let a = ([], ["b"; "a"; "c"; "d"]) in
+  let b = (["b"], []) in
+  let res = ([], ["b"]) in
+  merge_check ~old ~a ~b ~res "Multiple tasks consumed/performed on one branch and performed on another"
+
+  >>= fun () ->
+  let old = (["a"; "b"; "c"], ["d"; "e"; "f"]) in
+  let a = (["c"], ["b"; "e"; "f"]) in (* Perform d, Consume a, Perform a, Consume b *)
+  let b = (["b"; "c"], ["f"]) in (* Consume a, Perform a, Perform d, Perform e *)
+  let res = (["c"], ["b"; "f"]) in
+  merge_check ~old ~a ~b ~res "Multiple tasks consumed/performed on both branches"
 
 let test_map _ () =
   let open Intmap in begin
