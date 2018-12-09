@@ -235,10 +235,10 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
           | Some br_name ->
 
             Logs_lwt.info ?src (fun m -> m "Detected a map request on branch %s"
-                              (JobQueue.Impl.job_to_string br_name))
+                                   (JobQueue.Impl.job_to_string br_name))
             >>= fun () -> handle_request ?src s client br_name name
             >>= fun () -> Logs_lwt.info ?src (fun m -> m "Finished handling request on branch %s"
-                                            (JobQueue.Impl.job_to_string br_name))
+                                                 (JobQueue.Impl.job_to_string br_name))
 
           | None ->
             Logs_lwt.info ?src (fun m -> m "Found no map request. Sleeping for %f seconds." poll_freq)
