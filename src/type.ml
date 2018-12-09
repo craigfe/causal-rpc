@@ -116,7 +116,7 @@ module Boxed = struct
     | Array of box array
     | List of box list
     | Option of box option
-    | Result of (box, box) result [@@deriving show]
+    | Result of (box, box) result [@@deriving show, eq]
 
   let irmin_t = let open Irmin.Type in
     mu (fun x -> variant "irmin_t"
@@ -151,32 +151,6 @@ module Boxed = struct
                  |~ case1 "Result" (result x x) (fun r -> Result r)
                  |> sealv)
 
-  (* TODO: don't implement this twice. Use Equal.t instead *)
-  let rec equal a b = match (a, b) with
-    | Bool b1, Bool b2 -> (b1 == b2)
-    | Bytes b1, Bytes b2 -> (b1 == b2)
-    | Char c1, Char c2 -> (c1 == c2)
-    | Float f1, Float f2 -> (f1 == f2)
-    | Int i1, Int i2 -> (i1 == i2)
-    | Int32 i1, Int32 i2 -> (i1 == i2)
-    | Int64 i1, Int64 i2 -> (i1 == i2)
-    | String s1, String s2 -> String.equal s1 s2
-    | Unit (), Unit () -> true
-    | Array x, Array y ->
-      Array.mapi (fun i a -> equal a (Array.get y i)) x
-      |> Array.for_all (fun x -> x)
-
-    | List l1, List l2 -> List.fold_right (&&) (List.map2 equal l1 l2) true
-    | Option o1, Option o2 -> (match (o1, o2) with
-        | Some a, Some b -> equal a b
-        | None, None -> true
-        | _ -> false)
-    | Result r1, Result r2 -> (match (r1, r2) with
-        | Ok a, Ok b -> equal a b
-        | Error a, Error b -> equal a b
-        | _ -> false)
-    | _ -> false
-
   let pp_cust ppf v = match v with
     | Bool b -> Fmt.pf ppf "Bool %b" b
     | Bytes b -> Fmt.pf ppf "Bytes %s" (Bytes.to_string b)
@@ -194,7 +168,7 @@ module Boxed = struct
     | Result _ -> invalid_arg "unsupported pretty printer"
     | Option _ -> invalid_arg "unsupported pretty printer"
 
-  let test_t = Alcotest.testable pp_cust equal
+  let test_t = Alcotest.testable pp_cust equal_box
 
   exception Type_error
 
@@ -236,5 +210,5 @@ module Boxed = struct
     | (Option _, Option None) -> None
     | _ -> raise Type_error
 
-  type t = box [@@deriving show]
+  type t = box [@@deriving show, eq]
 end

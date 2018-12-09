@@ -1,5 +1,6 @@
 (test
 	(name test)
+	(preprocess (pps ppx_deriving.std))
 	(libraries
     digestif
 		alcotest

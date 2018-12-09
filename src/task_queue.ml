@@ -3,7 +3,7 @@ type task = {
   name: string;
   params: Type.Boxed.t list;
   key: string;
-} [@@deriving show]
+} [@@deriving show, eq]
 
 let task =
   let open Irmin.Type in
