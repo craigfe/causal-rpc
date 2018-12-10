@@ -81,8 +81,6 @@ module type S = sig
   exception Store_error of Store.write_error
 
   (* -- TESTING PURPOSES --------------------------------- *)
-  val task_queue_is_empty: t -> bool Lwt.t
-  val job_queue_is_empty: t -> bool Lwt.t
   val generate_task_queue: 'a Operation.Unboxed.t -> 'a params -> t -> (Value.t, queue) contents Lwt.t
   (* ----------------------------------------------------- *)
 
@@ -93,8 +91,10 @@ module type S = sig
   (** Return the underlying store representation. TODO: remove. Nothing should need access
       to this, but it is currently being used by the worker. *)
 
-  val empty: ?directory:string -> unit -> t Lwt.t
-  (** The empty map. *)
+  val empty: ?directory:string -> ?remote_uri:string -> unit -> t Lwt.t
+  (** The empty map. If no directory is passed, then one will be generated randomly.
+      [remote_uri] is the location of the remote to use. If none is supplied, the
+      operations will not be pushed to a remote. *)
 
   val is_empty: t -> bool Lwt.t
   (** Test whether a map is empty or not. *)

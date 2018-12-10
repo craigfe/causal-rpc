@@ -119,15 +119,13 @@ module type S = sig
   type 'a params = 'a Interface.MakeOperation(Value).params
 
   (* Here for testing purposes *)
-  val task_queue_is_empty: t -> bool Lwt.t
-  val job_queue_is_empty: t -> bool Lwt.t
   val generate_task_queue: 'a Operation.Unboxed.t -> 'a params -> t -> (Value.t, queue) contents Lwt.t
   (* ------------------------- *)
 
   val of_store: Sync.db -> t
   val to_store: t -> Sync.db
 
-  val empty: ?directory:string -> unit -> t Lwt.t
+  val empty: ?directory:string -> ?remote_uri:string -> unit -> t Lwt.t
   val is_empty: t -> bool Lwt.t
   val mem: key -> t -> bool Lwt.t
   val add: ?message:string -> key -> Value.t -> t -> t Lwt.t
@@ -170,7 +168,10 @@ module Make
   type queue = QueueType.t
   type 'a params = 'a Operation.params
 
-  type t = Sync.db
+  type t = {
+    local: Store.t;
+    remote_uri: string option;
+  }
   (* A map is a branch in an Irmin Key-value store *)
 
   exception Internal_type_error
@@ -181,29 +182,31 @@ module Make
     |> Pervasives.(^) "/tmp/irmin/set/"
     |> fun x -> Logs.info (fun m -> m "No directory supplied. Generated random directory %s" x); x
 
-  let empty ?(directory=generate_random_directory()) () =
+  let empty ?(directory=generate_random_directory()) ?remote_uri () =
     let config = Irmin_git.config ~bare:true directory in
 
     if String.sub directory 0 11 <> "/tmp/irmin/"
     then invalid_arg ("Supplied directory (" ^ directory ^ ") must be in /tmp/irmin/");
 
     (* Delete the directory if it already exists... Unsafe! *)
-    let ret_code = Sys.command ("rm -rf " ^ directory) in begin
-      if (ret_code <> 0) then invalid_arg "Unable to delete directory";
+    let ret_code = Sys.command ("rm -rf " ^ directory) in
+    if (ret_code <> 0) then invalid_arg "Unable to delete directory";
 
-      Store.Repo.v config
-      >>= fun repo -> Store.of_branch repo "master"
-    end
+    Store.Repo.v config
+    >>= Store.master
 
-  let of_store s = s
-  let to_store s = s
+    >|= fun local -> {local; remote_uri}
 
-  let mem key m =
-    Store.tree m
+  let of_store s = {local = s; remote_uri = None}
+  let to_store {local; _} = local
+
+  let mem key {local; _} =
+    Store.tree local
     >>= fun tree -> Store.Tree.list tree ["vals"]
     >|= List.exists (fun (x,_) -> x = key)
 
   let add ?message key value m =
+    let l = m.local in
     let message = (match message with
         | Some m -> m
         | None -> Printf.sprintf "Commit to key %s" key) in
@@ -211,7 +214,7 @@ module Make
     Store.set
       ~allow_empty:true
       ~info:(Irmin_unix.info ~author:"client" "%s" message)
-      m
+      l
       ["vals"; key]
       (Value value)
 
@@ -220,6 +223,7 @@ module Make
     | Error se -> Lwt.fail @@ Store_error se
 
   let add_all ?message kv_list m =
+    let l = m.local in
     let rec contains_duplicates l = (match l with
         | [] -> false
         | x::xs -> (List.mem x xs) || contains_duplicates xs)
@@ -230,24 +234,29 @@ module Make
         | Some m -> m
         | None -> Printf.sprintf "Commit to %d keys" (List.length kv_list)) in
 
+
+    Store.find_tree l ["vals"]
+    >|= (fun t -> match t with
+        | Some t -> t
+        | None -> Store.Tree.empty)
+
     (* We construct the commit by folding over the (k,v) list and accumulating a tree *)
-    Lwt_list.fold_right_s
-      (fun (k, v) tree_acc -> Store.Tree.add tree_acc ["vals"; k] (Value v))
+    >>= Lwt_list.fold_right_s
+      (fun (k, v) tree_acc -> Store.Tree.add tree_acc [k] (Value v))
       kv_list
-      Store.Tree.empty
 
     >>= fun tree -> Store.set_tree
       ~allow_empty:true
       ~info:(Irmin_unix.info ~author:"client" "%s" message)
-      m [] tree
+      l ["vals"] tree
 
     >>= fun res -> (match res with
         | Ok () -> Lwt.return m
         | Error se -> Lwt.fail @@ Store_error se)
 
-  let find key m =
+  let find key {local; _} =
     (* Get the value from the store and deserialise it *)
-    Store.find m ["vals"; key]
+    Store.find local ["vals"; key]
 
     >>= fun value -> match value with
     | Some (Value v) -> Lwt.return v
@@ -256,8 +265,8 @@ module Make
 
   let remove _ _ = invalid_arg "TODO"
 
-  let size m =
-    Store.tree m
+  let size {local; _} =
+    Store.tree local
     >>= fun tree -> Store.Tree.list tree ["vals"]
     (* >|= List.filter (fun (_, typ) -> typ = `Contents) *)
     >|= List.length
@@ -267,14 +276,14 @@ module Make
     >|= (=) 0
 
   let keys m =
-    Store.tree m
+    Store.tree m.local
     >>= fun tree -> Store.Tree.list tree ["vals"]
     >|= List.map(fst)
 
   let values m =
-    Store.tree m
+    Store.tree m.local
     >>= fun tree -> Store.Tree.list tree ["vals"]
-    >>= Lwt_list.map_p (fun (x, _) -> Store.get m ["vals"; x])
+    >>= Lwt_list.map_p (fun (x, _) -> Store.get m.local ["vals"; x])
     >|= List.map (fun value -> match value with
         | Value v -> v
         | _ -> raise Internal_type_error
@@ -295,9 +304,6 @@ module Make
   let task_queue_size branch =
     get_task_queue branch
     >|= fun (a, b) -> (List.length a) + (List.length b)
-
-  let job_queue_is_empty m =
-    JobQueue.Impl.is_empty m
 
   let rec flatten_params: type a. a params -> Type.Boxed.t list = fun ps ->
     match ps with
@@ -326,21 +332,23 @@ module Make
   let map: type a. ?timeout:float -> a Operation.Unboxed.t -> a params -> t -> t Lwt.t =
     fun ?(timeout=5.0) operation params m ->
 
+    let l = m.local in
+
     (* Generate a new unique branch name for the map *)
     let rec unique_name_gen () =
       Lwt.wrap (fun () -> "map--" ^ Misc.generate_rand_string ~length:8 ())
-      >>= fun map_name -> Store.Branch.mem (Store.repo m) map_name
+      >>= fun map_name -> Store.Branch.mem (Store.repo l) map_name
       >>= fun exists -> if exists then unique_name_gen () else Lwt.return map_name
     in unique_name_gen ()
 
     >>= fun map_name -> Logs_lwt.app (fun m -> m "Map operation issued. Branch name %s" map_name)
 
     (* Push the job to the job queue *)
-    >>= fun () -> JobQueue.Impl.push (JobQueue.Impl.job_of_string map_name) m
+    >>= fun () -> JobQueue.Impl.push (JobQueue.Impl.job_of_string map_name) l
 
     (* Create a new branch to isolate the operation *)
-    >>= fun () -> Store.clone ~src:m ~dst:map_name
-    >>= fun branch -> Store.merge_with_branch m
+    >>= fun () -> Store.clone ~src:l ~dst:map_name
+    >>= fun branch -> Store.merge_with_branch l
       ~info:(Irmin_unix.info ~author:"map" "Merged") Store.Branch.master
     >>= Misc.handle_merge_conflict Store.Branch.master map_name
 
@@ -364,7 +372,7 @@ module Make
       if String.equal br_name map_name then Lwt.return_unit
       else if not (String.sub br_name  0 5 |> String.equal "map--") then begin
 
-        Store.of_branch (Store.repo m) br_name
+        Store.of_branch (Store.repo l) br_name
         >>= JobQueue.Impl.peek_opt
         >>= fun job -> (match job with
             | Some j when String.equal map_name (JobQueue.Impl.job_to_string j) ->
@@ -389,7 +397,7 @@ module Make
 
     in
 
-    Store.Branch.watch_all (Store.repo m) watch_callback
+    Store.Branch.watch_all (Store.repo l) watch_callback
 
     >>= fun watch -> Logs_lwt.app (fun m -> m "Waiting for the task queue to be empty, with timeout %f" timeout)
     >>= fun () ->
@@ -419,12 +427,12 @@ module Make
     >>= (fun () -> Logs_lwt.info @@ fun m -> m "All operations complete on %s. Merging with the master branch" map_name)
 
     (* Merge the map branch into master *)
-    >>= fun () -> Store.merge_with_branch m
+    >>= fun () -> Store.merge_with_branch l
       ~info:(Irmin_unix.info ~author: "map" "Job %s complete" map_name) map_name
     >>= Misc.handle_merge_conflict map_name Store.Branch.master
 
     (* Remove the job from the job queue *)
-    >>= fun () -> JobQueue.Impl.pop m
+    >>= fun () -> JobQueue.Impl.pop l
 
     (* For now, we only ever perform one map at once. Eventually, the job queue
        will need to be cleverer to avoid popping off the wrong job here *)
