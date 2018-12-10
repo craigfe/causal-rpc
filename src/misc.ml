@@ -14,6 +14,17 @@ let generate_rand_string ?(length=8) () =
 	|> Array.to_list
 	|> String.concat ""
 
+let pick_random p =
+  let i = Random.int (List.length p) in
+
+  let rec inner n list acc = match n, list with
+    | 0, x::xs -> (x, (List.rev acc) @ xs)
+    | n, x::xs -> inner (n-1) xs (x::acc)
+    | _, [] -> invalid_arg "Misc.pick_random internal error"
+
+  in inner i p []
+
+
 let timestamp () =
   let ts = Unix.gettimeofday() in
   let tm = Unix.localtime ts in

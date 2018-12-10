@@ -2,6 +2,7 @@ module type W = sig
   val run:
     ?switch:Lwt_switch.t ->
     ?log_source:bool ->
+    ?random_selection:bool ->
     ?name:string ->
     ?dir:string ->
     ?poll_freq:float ->

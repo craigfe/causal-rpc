@@ -14,6 +14,7 @@ let worker_pool switch n dir =
     | 0 -> []
     | n -> let w =
              IntWorker.run
+               ~random_selection:true
                ~switch
                ~name:("worker_" ^ (string_of_int n))
                ~dir:("/tmp/irmin/test_stress/worker/" ^ dir ^ "/worker_" ^ (string_of_int n))

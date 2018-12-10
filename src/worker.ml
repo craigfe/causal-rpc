@@ -4,6 +4,7 @@ module type W = sig
   val run:
     ?switch:Lwt_switch.t ->
     ?log_source:bool ->
+    ?random_selection:bool ->
     ?name:string ->
     ?dir:string ->
     ?poll_freq:float ->
@@ -46,22 +47,28 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     Logs.info ?src (fun m -> m "No directory supplied. Using default directory %s" dir);
     dir
 
-  let get_task_opt local_br working_br remote worker_name = (* TODO: implement this all in a transaction *)
+  let get_task_opt ~random_selection local_br working_br remote worker_name = (* TODO: implement this all in a transaction *)
 
     (* Get latest changes to this branch*)
     Sync.pull_exn local_br remote `Set
     >>= fun () -> Store.find local_br ["task_queue"]
     >>= fun q -> match q with
-    | Some Task_queue ((x::xs), pending) ->
+    | Some Task_queue (t::ts as todo, pending) ->
+
+      let (selected, remaining) = if random_selection then
+          Misc.pick_random todo
+        else (t, ts) in
+
       Store.set working_br
-        ~info:(Irmin_unix.info ~author:worker_name "Consume <%s> task on key %s" x.name x.key)
+        ~info:(Irmin_unix.info ~author:worker_name "Consume <%s> task on key %s"
+                 selected.name selected.key)
         ["task_queue"]
-        (Task_queue (xs, x::pending))
+        (Task_queue (remaining, selected::pending))
       >>= fun res -> (match res with
           | Ok () -> Lwt.return_unit
           | Error se -> Lwt.fail @@ Store_error se)
 
-      >|= fun () -> Some x
+      >|= fun () -> Some selected
 
     | Some Task_queue ([], _) -> Lwt.return None (* All tasks are pending *)
     | None -> Lwt.return None (* No task to be performed *)
@@ -126,7 +133,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     >>= fun old_val -> Lwt.return ((pass_params (boxed_mi ()) task.params) old_val)
     >>= fun new_val -> Store.Tree.add store_tree ["vals"; task.key] (Value new_val)
 
-  let handle_request ?src repo client job worker_name =
+  let handle_request ~random_selection ?src repo client job worker_name =
 
     (* Checkout the branch *)
     let map_name = JobQueue.Impl.job_to_string job in
@@ -152,7 +159,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
       >>= Misc.handle_merge_conflict work_br_name map_name
 
       (* Attempt to take a task from the queue *)
-      >>= fun () -> get_task_opt working_br working_br input_remote worker_name
+      >>= fun () -> get_task_opt ~random_selection working_br working_br input_remote worker_name
       >>= fun task -> match task with
 
       | Some t -> begin
@@ -197,6 +204,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
   let run
       ?switch
       ?(log_source=true)
+      ?(random_selection=false)
       ?(name=random_name())
       ?dir
       ?(poll_freq = 5.0)
@@ -204,6 +212,8 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
     if String.sub name 0 5 |> String.equal "map--" then
       invalid_arg "Worker names cannot begin with map--";
+
+    if random_selection then Random.self_init (); (* Initialise the random number generator *)
 
     let src = if log_source then Some (Logs.Src.create name) else None in
     let dir = match dir with
@@ -243,7 +253,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
             Logs_lwt.info ?src (fun m -> m "Detected a map request on branch %s"
                                    (JobQueue.Impl.job_to_string br_name))
-            >>= fun () -> handle_request ?src s client br_name name
+            >>= fun () -> handle_request ~random_selection ?src s client br_name name
             >>= fun () -> Logs_lwt.info ?src (fun m -> m "Finished handling request on branch %s"
                                                  (JobQueue.Impl.job_to_string br_name))
 
