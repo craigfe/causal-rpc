@@ -103,13 +103,12 @@ module type S = sig
   type t
 
   module Contents: Irmin.Contents.S with type t = (Value.t, queue) contents
-  module Store: Irmin_unix.Git.S
+  module Store: Store.S
     with type key = Irmin.Path.String_list.t
      and type step = string
      and module Key = Irmin.Path.String_list
      and type contents = Contents.t
      and type branch = string
-     and module Git = Irmin_unix.Git.FS.G
 
   module Sync: Irmin.SYNC with type db = Store.t
   module JobQueue: JOB_QUEUE with module Store = Store
@@ -146,22 +145,22 @@ module Make
     (QueueType: QUEUE_TYPE)
     (JQueueMake: functor
        (Val: Irmin.Contents.S)
-       (St: Irmin_unix.Git.S
+       (St: Store.S
         with type key = Irmin.Path.String_list.t
          and type step = string
          and module Key = Irmin.Path.String_list
          and type contents = (Val.t, QueueType.t) contents
-         and type branch = string
-         and module Git = Irmin_unix.Git.FS.G)
+         and type branch = string)
        -> (JOB_QUEUE with module Store = St)
     ): S
   with module Value = Desc.Val
    and module Operation = Interface.MakeOperation(Desc.Val)
    and type queue = QueueType.t = struct
 
+
   module Value = Desc.Val
   module Contents = MakeContents(Desc.Val)(QueueType)
-  module Store = Irmin_unix.Git.FS.KV(Contents)
+  module Store = Store.Make(Contents)
   module Sync = Irmin.Sync(Store)
   module JobQueue = JQueueMake(Desc.Val)(Store)
   module Operation = Interface.MakeOperation(Desc.Val)
