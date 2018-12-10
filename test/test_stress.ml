@@ -23,12 +23,30 @@ let worker_pool switch n dir =
       in w :: inner (n-1) dir
   in inner n dir
 
+
+let rec nlist n = match n with
+  | 1 -> ["1", Int64.of_int 1]
+  | n -> (string_of_int n, Int64.of_int n) :: nlist (n-1)
+
+let many_value_test s () =
+  let root = "/tmp/irmin/test_stress/many_value/" in
+  let original_values = nlist 10000 in
+
+      IntMap.empty ~directory:(root ^ "test-0001") ()
+    >>= IntMap.add_all original_values
+    >>= fun m -> Lwt.pick @@ (worker_pool s 4 "many_value/test-0001") @ [
+        let rec inner map =
+          IntMap.map ~timeout:1000.0 multiply_op
+            Interface.(Param (Type.int64, Int64.of_int 2, Unit)) map
+          >>= inner
+        in inner m
+      ]
+
 let stress_test s () =
   Misc.set_reporter ();
   Logs.set_level (Some Logs.Info);
   let root = "/tmp/irmin/test_stress/stress/" in
   let original_values = [1;2;3;4;5;6;7;8;9;10;11;12] in
-  let () = Lwt_preemptive.simple_init () in
 
   IntMap.empty ~directory:(root ^ "test-0001") ()
   >>= IntMap.add_all
@@ -45,18 +63,18 @@ let stress_test s () =
      "k", Int64.of_int 11;
      "l", Int64.of_int 12]
   >>= fun m -> Lwt.pick @@ (worker_pool s 4 "stress/test-0001") @ [
-    let rec inner n map =
-      IntMap.map ~timeout:100.0 increment_op Interface.Unit map
-      >>= IntMap.values
-      >|= List.map Int64.to_int
-      >|= List.sort compare
-      >>= fun actual -> Lwt.return (List.map ((+) n) original_values)
-      >>= fun expected -> Lwt.return (Alcotest.(check (list int)) "Multiple request on many keys concurrently" expected actual)
-      >>= fun () -> inner (n + 1) map
-    in inner 1 m
-  ]
+      let rec inner n map =
+        IntMap.map ~timeout:100.0 increment_op Interface.Unit map
+        >>= IntMap.values
+        >|= List.map Int64.to_int
+        >|= List.sort compare
+        >>= fun actual -> Lwt.return (List.map ((+) n) original_values)
+        >>= fun expected -> Lwt.return (Alcotest.(check (list int)) "Multiple request on many keys concurrently" expected actual)
+        >>= fun () -> inner (n + 1) map
+      in inner 1 m
+    ]
 
 let tests = [
-
-  Alcotest_lwt.test_case "Stress test" `Slow stress_test
+  Alcotest_lwt.test_case "Many value test" `Slow many_value_test
+  (* Alcotest_lwt.test_case "Stress test" `Slow stress_test *)
 ]
