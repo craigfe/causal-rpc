@@ -49,6 +49,7 @@ module Implementation: Interface.IMPL with type Val.t = int64 = struct
 end
 
 module IntMap = Map.Make
+    (Irmin_unix.Git.FS.G)
     (Definition)
     (Job_queue.Type)
     (Job_queue.Make)

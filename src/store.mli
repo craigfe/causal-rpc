@@ -3,7 +3,7 @@ module type S = sig
   val remote: ?headers:Cohttp.Header.t -> string -> Irmin.remote
 end
 
-module Make(Contents: Irmin.Contents.S): S
+module Make(GitImpl: Irmin_git.G)(Contents: Irmin.Contents.S): S
   with type key = string list
    and type step = string
    and type contents = Contents.t

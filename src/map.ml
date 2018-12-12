@@ -47,7 +47,6 @@ module MakeContents (Val: Irmin.Contents.S) (JQueueType: QUEUE_TYPE): Irmin.Cont
 
   type t = (Val.t, JQueueType.t) contents
 
-
   let t =
     let open Irmin.Type in
     variant "contents" (fun value task_queue branch_name -> function
@@ -58,7 +57,6 @@ module MakeContents (Val: Irmin.Contents.S) (JQueueType: QUEUE_TYPE): Irmin.Cont
     |~ case1 "Task_queue" Task_queue.t (fun q -> Task_queue q)
     |~ case1 "Job_queue" JQueueType.t (fun js -> Job_queue js)
     |> sealv
-
 
   let merge ~old t1 t2 =
 
@@ -138,6 +136,7 @@ module type S = sig
 end
 
 module Make
+    (GitBackend: Irmin_git.G)
     (Desc: Interface.DESC)
     (QueueType: QUEUE_TYPE)
     (JQueueMake: functor
@@ -157,7 +156,7 @@ module Make
 
   module Value = Desc.Val
   module Contents = MakeContents(Desc.Val)(QueueType)
-  module Store = Store.Make(Contents)
+  module Store = Store.Make(GitBackend)(Contents)
   module Sync = Irmin.Sync(Store)
   module JobQueue = JQueueMake(Desc.Val)(Store)
   module Operation = Interface.MakeOperation(Desc.Val)

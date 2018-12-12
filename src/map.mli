@@ -136,6 +136,7 @@ module type S = sig
 end
 
 module Make
+    (GitBackend: Irmin_git.G)
     (Desc: Interface.DESC)
     (QueueType: QUEUE_TYPE)
     (JQueueMake: functor

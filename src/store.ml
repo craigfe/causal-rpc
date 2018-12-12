@@ -3,6 +3,6 @@ module type S = sig
   val remote: ?headers:Cohttp.Header.t -> string -> Irmin.remote
 end
 
-module Make(Contents: Irmin.Contents.S) = Irmin_unix.Git.KV
-    (Irmin_unix.Git.FS.G)
+module Make(GitImpl: Irmin_git.G)(Contents: Irmin.Contents.S) = Irmin_unix.Git.KV
+    (GitImpl)
     (Contents)

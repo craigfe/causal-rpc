@@ -28,5 +28,5 @@ module Implementation: Interface.IMPL with type Val.t = contents = struct
   let api = define [implement commit_count_op (fun (s, _) -> ("", Github.commit_count s))]
 end
 
-module GithubMap = Map.Make(Definition)(Job_queue.Type)(Job_queue.Make)
+module GithubMap = Map.Make(Irmin_unix.Git.FS.G)(Definition)(Job_queue.Type)(Job_queue.Make)
 module GithubWorker = Worker.Make(GithubMap)(Implementation)
