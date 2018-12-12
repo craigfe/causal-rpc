@@ -5,6 +5,7 @@ module type W = sig
     ?switch:Lwt_switch.t ->
     ?log_source:bool ->
     ?random_selection:bool ->
+    ?batch_size:int ->
     ?name:string ->
     ?dir:string ->
     ?poll_freq:float ->
@@ -47,35 +48,50 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     Logs.info ?src (fun m -> m "No directory supplied. Using default directory %s" dir);
     dir
 
-  let get_task_opt ~random_selection local_br working_br remote worker_name = (* TODO: implement this all in a transaction *)
+  let get_tasks_opt ~random_selection ~batch_size local_br working_br remote worker_name = (* TODO: implement this all in a transaction *)
 
     (* Get latest changes to this branch*)
     Sync.pull_exn local_br remote `Set
     >>= fun () -> Store.find local_br ["task_queue"]
     >>= fun q -> match q with
-    | Some Task_queue (t::ts as todo, pending) ->
+    | Some Task_queue (_::_ as todo, pending) ->
 
-      let (selected, remaining) = if random_selection then
-          Misc.pick_random todo
-        else (t, ts) in
+      let rec can_take_all_tasks l n = match l, n with
+        | [], _ -> true
+        | _, 0 -> false
+        | _::ts, n -> can_take_all_tasks ts (n-1) in
 
-      Store.set working_br
-        ~info:(Irmin_unix.info ~author:worker_name "Consume <%s> task on key %s"
-                 selected.name selected.key)
-        ["task_queue"]
-        (Task_queue (remaining, selected::pending))
+      let split_func =
+        if can_take_all_tasks todo batch_size then (* Consume all the tasks if we can *)
+          (fun _ a -> (a, []))
+
+        else if random_selection then (* If random_selection is enabled, use that *)
+          Misc.split_random
+
+        else (* Otherwise pick sequentially from the list *)
+          Misc.split_sequential in
+
+      let (selected, remaining) = split_func batch_size todo in
+      let pp_task = Fmt.of_to_string (fun (t:Task_queue.task) -> Fmt.strf "<%s> on key %s" t.name t.key) in
+      let pp_commit = Fmt.of_to_string (fun (t:Task_queue.task list) -> match t with
+          | _::_::_ -> Fmt.strf "Consume [%a]" (Fmt.list ~sep:Fmt.comma pp_task) t
+          | _       -> Fmt.strf "Consume %a"   (Fmt.list ~sep:Fmt.comma pp_task) t) in
+
+      Store.set working_br ~info:(Irmin_unix.info ~author:worker_name "%a" pp_commit selected)
+        ["task_queue"] (Task_queue (remaining, selected @ pending))
+
       >>= fun res -> (match res with
           | Ok () -> Lwt.return_unit
           | Error se -> Lwt.fail @@ Store_error se)
 
-      >|= fun () -> Some selected
+      >|= fun () -> selected
 
-    | Some Task_queue ([], _) -> Lwt.return None (* All tasks are pending *)
-    | None -> Lwt.return None (* No task to be performed *)
+    | Some Task_queue ([], _) -> Lwt.return [] (* All tasks are pending *)
+    | None -> Lwt.return [] (* No task to be performed *)
     | Some _ -> Lwt.fail Internal_type_error
 
   (* Take a store_tree and remove a pending task from it *)
-  let remove_pending_task task (store_tree: Store.tree): Store.tree Lwt.t =
+  let remove_pending_task (task: Task_queue.task) (store_tree: Store.tree): Store.tree Lwt.t =
 
     Store.Tree.get store_tree ["task_queue"]
     >>= (fun q -> match q with
@@ -84,6 +100,9 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     >|= (fun (todo, pending) -> Map.Task_queue
             (todo, List.filter (fun t -> t <> task) pending))
     >>= Store.Tree.add store_tree ["task_queue"]
+
+  let remove_pending_tasks (tasks: Task_queue.task list) (store_tree: Store.tree): Store.tree Lwt.t =
+    Lwt_list.fold_right_s remove_pending_task tasks store_tree
 
   (* We have a function of type (param -> ... -> param -> val -> val).
      Here we take the parameters that were passed as part of the RPC and recursively apply them
@@ -133,7 +152,10 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     >>= fun old_val -> Lwt.return ((pass_params (boxed_mi ()) task.params) old_val)
     >>= fun new_val -> Store.Tree.add store_tree ["vals"; task.key] (Value new_val)
 
-  let handle_request ~random_selection ?src repo client job worker_name =
+  let perform_tasks (tasks:Task_queue.task list) (store_tree: Store.tree): Store.tree Lwt.t =
+    Lwt_list.fold_right_s perform_task tasks store_tree
+
+  let handle_request ~random_selection ~batch_size ?src repo client job worker_name =
 
     (* Checkout the branch *)
     let map_name = JobQueue.Impl.job_to_string job in
@@ -159,28 +181,45 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
       >>= Misc.handle_merge_conflict work_br_name map_name
 
       (* Attempt to take a task from the queue *)
-      >>= fun () -> get_task_opt ~random_selection working_br working_br input_remote worker_name
-      >>= fun task -> match task with
+      >>= fun () -> get_tasks_opt ~random_selection ~batch_size working_br working_br input_remote worker_name
+      >>= fun tasks -> match tasks with
 
-      | Some t -> begin
-          Logs_lwt.info ?src (fun m -> m "Attempting to consume <%s> on key %s" t.name t.key)
+      | [] -> Logs_lwt.info ?src @@ fun m -> m "No available tasks in the task queue."
+      | ts -> begin
+          let task_count = List.length ts in
+          let fmt_tasklist = Fmt.brackets @@ Fmt.list ~sep:Fmt.comma Task_queue.pp_task in
+
+          assert (task_count <= batch_size);
+
+          (match task_count with
+           | 1             -> Logs_lwt.info ?src (fun m -> m "Attempting to consume: %a" Task_queue.pp_task (List.hd ts))
+           | n when n < 11 -> Logs_lwt.info ?src (fun m -> m "Attempting to consume %d tasks: %a" n fmt_tasklist ts)
+           | n             -> Logs_lwt.info ?src (fun m -> m "Attempting to consume %d tasks" n))
+
           >>= fun () -> Sync.push working_br output_remote (* We first tell the remote that we intend to work on this item *)
           >>= fun res -> (match res with
               | Ok () -> Lwt.return_unit
               | Error pe -> Lwt.fail @@ Push_error pe
             )
-          >>= fun () -> Logs_lwt.info ?src (fun m -> m "Starting to perform <%s> on key %s" t.name t.key)
+          >>= fun () -> Logs_lwt.info ?src (fun m -> m "Starting to perform %a" fmt_tasklist ts)
 
-          (* We get the trees with the performed task and the pending task removed *)
+          (* We get the trees with the tasks having been a) performed to the map and b) removed from the pending queue *)
           >>= fun () -> Store.get_tree working_br []
-          >>= perform_task t
-          >>= remove_pending_task t
-          >>= fun result_tree -> Logs_lwt.info ?src @@ fun m -> m "Completed <%s> task on key %s. Pushing to remote" t.name t.key
+          >>= perform_tasks ts
+          >>= remove_pending_tasks ts
+          >>= fun result_tree ->
+
+          let pp_task = Fmt.of_to_string (fun (t:Task_queue.task) -> Fmt.strf "<%s> on key %s" t.name t.key) in
+          let pp_commit = Fmt.of_to_string (fun (t:Task_queue.task list) -> match t with
+              | _::_::_ -> Fmt.strf "Perform [%a]" (Fmt.list ~sep:Fmt.comma pp_task) t
+              | _       -> Fmt.strf "Perform %a"   (Fmt.list ~sep:Fmt.comma pp_task) t) in
+
+          Logs_lwt.info ?src @@ fun m -> m "Completed %a. Pushing to remote" fmt_tasklist ts
 
           (* Now perform the commit and push to the remote. This commit should never be empty. But for
              debugging purposes we show empty commits *)
           >>= fun () -> Store.set_tree ~allow_empty:true
-            ~info:(Irmin_unix.info ~author:worker_name "Perform <%s> task on key %s" t.name t.key)
+            ~info:(Irmin_unix.info ~author:worker_name "%a" pp_commit ts)
             working_br [] result_tree
 
           >>= fun res -> (match res with
@@ -197,7 +236,6 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
           >>= task_exection_loop
         end
 
-      | None -> Logs_lwt.info ?src @@ fun m -> m "No available tasks in the task queue."
 
     in task_exection_loop ()
 
@@ -205,6 +243,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
       ?switch
       ?(log_source=true)
       ?(random_selection=false)
+      ?(batch_size=1)
       ?(name=random_name())
       ?dir
       ?(poll_freq = 5.0)
@@ -212,6 +251,9 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
     if String.sub name 0 5 |> String.equal "map--" then
       invalid_arg "Worker names cannot begin with map--";
+
+    if batch_size < 1 then invalid_arg "The batch size must be positive";
+    if poll_freq <= 0.0 then invalid_arg "The polling frequency must be positive";
 
     if random_selection then Random.self_init (); (* Initialise the random number generator *)
 
@@ -253,7 +295,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
             Logs_lwt.info ?src (fun m -> m "Detected a map request on branch %s"
                                    (JobQueue.Impl.job_to_string br_name))
-            >>= fun () -> handle_request ~random_selection ?src s client br_name name
+            >>= fun () -> handle_request ~random_selection ~batch_size ?src s client br_name name
             >>= fun () -> Logs_lwt.info ?src (fun m -> m "Finished handling request on branch %s"
                                                  (JobQueue.Impl.job_to_string br_name))
 

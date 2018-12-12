@@ -3,6 +3,7 @@ module type W = sig
     ?switch:Lwt_switch.t ->
     ?log_source:bool ->
     ?random_selection:bool ->
+    ?batch_size:int ->
     ?name:string ->
     ?dir:string ->
     ?poll_freq:float ->

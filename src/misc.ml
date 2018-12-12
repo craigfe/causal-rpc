@@ -1,3 +1,5 @@
+module IntSet = Set.Make(struct type t = int let compare = Pervasives.compare end)
+
 let generate_rand_string ?(length=8) () =
 	Random.self_init (); (* Initialise the random number generator *)
 
@@ -14,16 +16,45 @@ let generate_rand_string ?(length=8) () =
 	|> Array.to_list
 	|> String.concat ""
 
-let pick_random p =
-  let i = Random.int (List.length p) in
+(* Convert two lists to a list of pairs *)
+let zip list1 list2 =
+  let rec inner l1 l2 acc = match l1, l2 with
+    | [], [] -> acc
+    | x::xs, y::ys -> inner xs ys ((x, y)::acc)
+    | _ -> invalid_arg "Lists do not have the same length"
+  in inner list1 list2 []
+
+(* Take the first [n] items from a list [l] and return a pair of the first
+   [n] items and the remaining items, all in the original order. *)
+let split_sequential n l =
+  if n < 0 then invalid_arg "Cannot take a negative number of items from a list";
 
   let rec inner n list acc = match n, list with
-    | 0, x::xs -> (x, (List.rev acc) @ xs)
-    | n, x::xs -> inner (n-1) xs (x::acc)
-    | _, [] -> invalid_arg "Misc.pick_random internal error"
+    | 0, t -> (List.rev acc, t)
+    | _, [] -> invalid_arg "Attempted to take too many items from the list"
+    | n, t::ts -> inner (n-1) ts (t::acc)
+  in inner n l []
 
-  in inner i p []
+(* Take [n] items randomly from a list [l] and return a pair of the selected
+   items and the remaining items, all in the original order. *)
+let split_random n l =
+  if n < 0 then invalid_arg "Cannot take a negative number of items from a list";
 
+  (* Generate random numbers until we have n of them *)
+  let s = ref IntSet.empty in
+  while IntSet.cardinal !s < n do
+    let i = Random.int (List.length l) in
+    s := IntSet.add i !s
+  done;
+
+  let is = List.sort Pervasives.compare (IntSet.elements !s) in
+
+  let rec inner i is list (l_acc, r_acc) = match is, list with
+    | []   , xs               -> (l_acc, r_acc @ xs)
+    | _    , []               -> invalid_arg "Attempted to take too many items from the list"
+    | c::is, x::xs when c = i -> inner (n+1) is xs (x::l_acc, r_acc)
+    | _::is, x::xs            -> inner (n+1) is xs (l_acc, x::r_acc)
+  in inner 0 is l ([], [])
 
 let timestamp () =
   let ts = Unix.gettimeofday() in
