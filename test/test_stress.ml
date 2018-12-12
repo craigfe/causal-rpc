@@ -73,6 +73,6 @@ let stress_test s () =
     ]
 
 let tests = [
-  Alcotest_lwt.test_case "Many value test" `Slow many_value_test
-  (* Alcotest_lwt.test_case "Stress test" `Slow stress_test *)
+  (* Alcotest_lwt.test_case "Many value test" `Slow many_value_test *)
+  Alcotest_lwt.test_case "Many map test" `Slow stress_test
 ]
