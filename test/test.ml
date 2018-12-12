@@ -8,4 +8,9 @@ let suite = [
  "Stress testing", Test_stress.tests
 ]
 
-let () = Alcotest.run "trace" suite
+let () =
+  Random.self_init ();
+  Trace_rpc.Misc.set_reporter ();
+  Logs.set_level (Some Logs.Info);
+
+  Alcotest.run "trace" suite

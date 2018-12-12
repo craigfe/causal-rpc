@@ -60,7 +60,6 @@ module MakeContents (Val: Irmin.Contents.S) (JQueueType: QUEUE_TYPE): Irmin.Cont
     |> sealv
 
 
-
   let merge ~old t1 t2 =
 
     let open Irmin.Merge.Infix in

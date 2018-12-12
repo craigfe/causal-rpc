@@ -43,8 +43,6 @@ let many_value_test s () =
       ]
 
 let stress_test s () =
-  Misc.set_reporter ();
-  Logs.set_level (Some Logs.Info);
   let root = "/tmp/irmin/test_stress/stress/" in
   let original_values = [1;2;3;4;5;6;7;8;9;10;11;12] in
 

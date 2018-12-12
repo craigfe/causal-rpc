@@ -70,21 +70,21 @@ let merge ~old x y =
   old () >>=* fun old ->
   let old = match old with None -> ([], []) | Some o -> o in
 
-  Logs.info (fun m -> m "Computing operations from \n%a\n to \n%a\n" pp old pp x);
+  Logs.debug (fun m -> m "Computing operations from \n%a\n to \n%a\n" pp old pp x);
 
   let ops_x = compute_operations ~input:old ~output:x in
   let ops_y = compute_operations ~input:old ~output:y in
   let old = (TaskSet.of_list (fst old), TaskSet.of_list (snd old)) in
 
-  Logs.info (fun m -> m "Merging: \n%a] and \n%a" pp_operations ops_x pp_operations ops_y);
+  Logs.debug (fun m -> m "Merging: \n%a] and \n%a" pp_operations ops_x pp_operations ops_y);
 
   merge_operations ops_x ops_y
   |> (fun o -> begin
-        Logs.info (fun m -> m "got merged ops: %a" pp_operations o);
+        Logs.debug (fun m -> m "Got merged ops: %a" pp_operations o);
         apply_operations old o
       end)
   |> (fun x -> begin
-        Logs.info (fun m -> m "applied ops to %a to get %a" pp_internal old (Fmt.result ~ok:pp_internal ~error:Fmt.string) x);
+        Logs.debug (fun m -> m "Applied ops to %a to get %a" pp_internal old (Fmt.result ~ok:pp_internal ~error:Fmt.string) x);
         match x with
         | Ok x -> Irmin.Merge.ok (to_internal (fst x), to_internal (snd x))
         | Error c -> Irmin.Merge.conflict "%s" c

@@ -32,9 +32,6 @@ let merge_check ?old ~a ~b ?res description =
   >|= Alcotest.check merge_t description res
 
 let test_merge _ () =
-  Misc.set_reporter ();
-  Logs.set_level (Some Logs.Info);
-
   let a = (["a"], []) in
   let b = (["a"], []) in
   merge_check ~a ~b "Identity operation"
