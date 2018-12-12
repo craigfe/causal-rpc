@@ -2,10 +2,11 @@ open Lwt.Infix
 open Trace_rpc
 open Intmap
 
-let worker switch dir = IntWorker.run
+let worker ?batch_size switch dir = IntWorker.run
     ~switch
-    ~dir:("/tmp/irmin/test_increment/worker/" ^ dir)
-    ~client:("file:///tmp/irmin/test_increment/" ^ dir)
+    ?batch_size
+    ~dir:("/tmp/irmin/test_single_worker/worker/" ^ dir)
+    ~client:("file:///tmp/irmin/test_single_worker/" ^ dir)
     ~poll_freq:0.01 ()
 
 let worker_pool switch n dir =
@@ -16,26 +17,20 @@ let worker_pool switch n dir =
              IntWorker.run
                ~switch
                ~name:("worker_" ^ (string_of_int n))
-               ~dir:("/tmp/irmin/test_increment/worker/" ^ dir ^ "/worker_" ^ (string_of_int n))
-               ~client:("file:///tmp/irmin/test_increment/" ^ dir)
+               ~dir:("/tmp/irmin/test_single_worker/worker/" ^ dir ^ "/worker_" ^ (string_of_int n))
+               ~client:("file:///tmp/irmin/test_single_worker/" ^ dir)
                ~poll_freq:0.01 ()
       in w :: inner (n-1) dir
   in inner n dir
 
-(** Tests of the distributed increment operation on integer maps *)
 let basic_tests _ () =
-  Misc.set_reporter ();
-  Logs.set_level (Some Logs.Info);
   let root = "/tmp/irmin/increment/" in
 
   IntMap.empty ~directory:(root ^ "test-0001") ()
   >>= IntMap.map increment_op Interface.Unit
   >|= (fun _ -> Alcotest.(check pass "Calling map on an empty Map terminates" () ()))
 
-
 let timeout_tests () =
-  Misc.set_reporter ();
-  Logs.set_level (Some Logs.Info);
   let root = "/tmp/irmin/timeout/" in
   let descr = "Calling map on a non-empty Map without a worker causes a timeout" in
 
@@ -47,14 +42,10 @@ let timeout_tests () =
 
   with Map.Timeout -> Alcotest.(check pass descr Map.Timeout Map.Timeout)
 
-
 (** Tests of the scheduling infrastructure and workers, using noops to do 'work' *)
 let noop_tests s () =
   let open IntMap in
-
-  Misc.set_reporter ();
-  Logs.set_level (Some Logs.Info);
-  let root = "/tmp/irmin/test_increment/noop/" in
+  let root = "/tmp/irmin/test_single_worker/noop/" in
 
   empty ~directory:(root ^ "test-0001") ()
   >>= add "a" Int64.one
@@ -83,10 +74,7 @@ let noop_tests s () =
 
 let increment_tests s () =
   let open IntMap in
-
-  Misc.set_reporter ();
-  Logs.set_level (Some Logs.Info);
-  let root = "/tmp/irmin/test_increment/increment/" in
+  let root = "/tmp/irmin/test_single_worker/increment/" in
 
   empty ~directory:(root ^ "test-0001") ()
   >>= add "a" Int64.zero
@@ -129,9 +117,7 @@ let increment_tests s () =
   >|= Alcotest.(check (list int)) "Increment request on multiple keys" [1; 11; 101]
 
 let multiply_tests s () =
-  Misc.set_reporter ();
-  Logs.set_level (Some Logs.Info);
-  let root = "/tmp/irmin/test_increment/multiply/" in
+  let root = "/tmp/irmin/test_single_worker/multiply/" in
 
   IntMap.empty ~directory:(root ^ "test-0001") ()
   >>= IntMap.add "a" (Int64.of_int 0)
@@ -148,44 +134,49 @@ let multiply_tests s () =
   >|= List.sort compare
   >|= Alcotest.(check (list int)) "Multiply request on multiple keys" [0; 50; 500]
 
-
-let worker_pool_tests s () =
-  Misc.set_reporter ();
-  Logs.set_level (Some Logs.Info);
-  let root = "/tmp/irmin/test_increment/worker_pool/" in
+let test_work_batches s () =
+  let root = "/tmp/irmin/test_single_worker/work_batches/" in
 
   IntMap.empty ~directory:(root ^ "test-0001") ()
-  >>= IntMap.add_all
-    ["a", Int64.of_int 1;
-     "b", Int64.of_int 2;
-     "c", Int64.of_int 3;
-     "d", Int64.of_int 4;
-     "e", Int64.of_int 5;
-     "f", Int64.of_int 6;
-     "g", Int64.of_int 7;
-     "h", Int64.of_int 8;
-     "i", Int64.of_int 9;
-     "j", Int64.of_int 10;
-     "k", Int64.of_int 11;
-     "l", Int64.of_int 12]
-  >>= fun m -> Lwt.pick @@ (worker_pool s 4 "worker_pool/test-0001") @ [
-      IntMap.map ~timeout:5.0 multiply_op (Interface.Param (Type.int64, Int64.of_int 10, Interface.Unit)) m
-      >|= fun _ -> ()
-    ]
+  >>= IntMap.add_all ["a", Int64.of_int 0;
+                      "b", Int64.of_int 1;
+                      "c", Int64.of_int 2;
+                      "d", Int64.of_int 3;
+                      "e", Int64.of_int 4]
+
+  >>= fun m -> Lwt.pick [
+    worker ~batch_size:2 s "work_batches/test-0001";
+    IntMap.map multiply_op (Interface.Param (Type.int64, Int64.of_int 10, Interface.Unit)) m
+    >|= fun _ -> ()
+  ]
   >>= fun () -> IntMap.values m
   >|= List.map Int64.to_int
   >|= List.sort compare
-  >|= Alcotest.(check (list int)) "Multiple request on many keys concurrently"
-    [10; 20; 30; 40; 50; 60; 70; 80; 90; 100; 110; 120]
+  >|= Alcotest.(check (list int)) "Batch size of 2 on a map of size 5" [0; 10; 20; 30; 40]
 
+  >>= IntMap.empty ~directory:(root ^ "test-0002")
+  >>= IntMap.add_all ["a", Int64.of_int 0;
+                      "b", Int64.of_int 1;
+                      "c", Int64.of_int 2;
+                      "d", Int64.of_int 3;
+                      "e", Int64.of_int 4]
+
+  >>= fun m -> Lwt.pick [
+    worker ~batch_size:10 s "work_batches/test-0002";
+    IntMap.map multiply_op (Interface.Param (Type.int64, Int64.of_int 10, Interface.Unit)) m
+    >|= fun _ -> ()
+  ]
+  >>= fun () -> IntMap.values m
+  >|= List.map Int64.to_int
+  >|= List.sort compare
+  >|= Alcotest.(check (list int)) "Batch size of 10 on a map of size 5" [0; 10; 20; 30; 40]
 
 let tests = [
   Alcotest_lwt.test_case "Workerless tests" `Quick basic_tests;
   "Tests of timeouts", `Quick, timeout_tests;
-  Alcotest_lwt.test_case "No-op testing" `Quick noop_tests;
-  Alcotest_lwt.test_case "Increment testing" `Quick increment_tests;
-  Alcotest_lwt.test_case "Multiply testing" `Quick multiply_tests;
-  Alcotest_lwt.test_case "Worker pool testing" `Slow worker_pool_tests;
-  (* Alcotest_lwt.test_case "Parallel testing" `Quick parallel_tests *)
+  Alcotest_lwt.test_case "No-op operations" `Quick noop_tests;
+  Alcotest_lwt.test_case "Increment operations" `Quick increment_tests;
+  Alcotest_lwt.test_case "Multiply operations" `Quick multiply_tests;
+  Alcotest_lwt.test_case "Batched work" `Quick test_work_batches;
 ]
 

@@ -1,11 +1,10 @@
 let suite = [
-  "map", [
-    "misc",        `Quick, Test_misc.test;
-    Alcotest_lwt.test_case "task_queues" `Quick Test_task_queues.test;
- ];
- "Local map ops", Test_map.tests;
- "Concurrent map ops", Test_increment.tests;
- "Stress testing", Test_stress.tests
+  "Miscellaneous", Test_misc.tests;
+  "Task queues", Test_task_queues.tests;
+  "Local map ops", Test_map.tests;
+  "Single-worker maps", Test_single_worker.tests;
+  "Multiple-worker maps", Test_multiple_worker.tests;
+  (* "Stress testing", Test_stress.tests *)
 ]
 
 let () =
