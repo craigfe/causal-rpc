@@ -80,7 +80,7 @@ module MakeContents (Val: Irmin.Contents.S) (JQueueType: QUEUE_TYPE): Irmin.Cont
     (* Irmin.Merge.conflict "%s" (Format.asprintf "old = %a\n\na = %a\n\nb = %a" pp_task_queue o pp_task_queue a pp_task_queue b) *)
 
     | _, Job_queue _, Job_queue _ -> Irmin.Merge.conflict "Job_queue"
-    | _ -> Irmin.Merge.conflict "Different values"
+    | _ -> Irmin.Merge.conflict "Different types in store"
 
   let merge = Irmin.Merge.(option (v t merge))
 

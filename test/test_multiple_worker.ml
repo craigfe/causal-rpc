@@ -36,8 +36,8 @@ let test_small_map s () =
     ]
 
 let test_medium_map s () =
-  let keys = ["a";"b";"c";"d"] in
-  let values = [1;2;3;4] in
+  let values = Helpers.sequence_list 1 4 in
+  let keys = List.map Helpers.key_from_int values in
 
   IntMap.empty ~directory:(root ^ "medium_map") ()
   >>= IntMap.add_all (Misc.zip keys (List.map Int64.of_int values))
@@ -57,8 +57,8 @@ let test_medium_map s () =
     ]
 
 let test_large_map s () =
-  let keys = ["a";"b";"c";"d";"e";"f";"g";"h";"i";"j";"k";"l"] in
-  let values = [1;2;3;4;5;6;7;8;9;10;11;12] in
+  let values = Helpers.sequence_list 1 12 in
+  let keys = List.map Helpers.key_from_int values in
 
   IntMap.empty ~directory:(root ^ "large_map") ()
   >>= IntMap.add_all (Misc.zip keys (List.map Int64.of_int values))
@@ -75,9 +75,6 @@ let test_large_map s () =
 let test_batched_work s () =
   let values = Helpers.sequence_list 1 12 in
   let keys = List.map Helpers.key_from_int values in
-
-  (* let keys = ["a";"b";"c";"d";"e";"f";"g";"h";"i";"j";"k";"l"] in
-   * let values = [1;2;3;4;5;6;7;8;9;10;11;12] in *)
 
   IntMap.empty ~directory:(root ^ "batched_work") ()
   >>= IntMap.add_all (Misc.zip keys (List.map Int64.of_int values))
