@@ -14,9 +14,9 @@ end
 
 module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = struct
   include M
-  type value = Value.t
 
   module I = Interface.MakeImplementation(Impl.Val)
+  module E = Executor.Make(I)
 
   exception Push_error of Sync.push_error
 
@@ -104,38 +104,6 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
   let remove_pending_tasks (tasks: Task_queue.task list) (store_tree: Store.tree): Store.tree Lwt.t =
     Lwt_list.fold_right_s remove_pending_task tasks store_tree
 
-  (* We have a function of type (param -> ... -> param -> val -> val).
-     Here we take the parameters that were passed as part of the RPC and recursively apply them
-     to the function implementation until we are left with a function of type (val -> val). *)
-  let pass_params ?src boxed_mi params =
-    match boxed_mi with
-    | I.Op.E matched_impl ->
-      let (unboxed, func) = matched_impl in
-      let func_type = I.Op.Unboxed.typ unboxed in
-
-      (* We take a function type and a function _of that type_, and recursively apply parameters
-         to the function until it reaches 'BaseType', i.e. val -> val *)
-      let rec aux: type a.
-        (value, a) Interface.func_type
-        -> a
-        -> Type.Boxed.t list
-        -> (value -> value) = fun func_type func params ->
-
-        match func_type with
-        | Interface.BaseType -> (Logs.debug ?src (fun m -> m "Reached base type"); match params with
-          | [] -> (fun x ->
-              Logs.debug ?src (fun m -> m "Executing val -> val level function");
-              let v = func x in
-              Logs.debug ?src (fun m -> m "Function execution complete");
-              v)
-          | _ -> raise @@ Map.Malformed_params "Too many parameters")
-
-        | Interface.ParamType (typ, nested_type) -> (Logs.debug ?src (fun m -> m "Nested type"); match params with
-          | (x::xs) -> aux nested_type (func (Type.Boxed.unbox typ x)) xs
-          | [] -> raise @@ Map.Malformed_params "Not enough parameters")
-
-      in aux func_type func params
-
   (* Take a store tree and a task and return the tree with the operation performed *)
   let perform_task (task:Task_queue.task) (store_tree: Store.tree): Store.tree Lwt.t =
 
@@ -149,7 +117,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
         | Some _ -> Lwt.fail Internal_type_error
         | None -> Lwt.fail @@ Map.Protocol_error (Printf.sprintf "Value <%s> could not be found when attempting to perform %s operation" task.key task.name)))
 
-    >>= fun old_val -> Lwt.return ((pass_params (boxed_mi ()) task.params) old_val)
+    >>= fun old_val -> Lwt.return ((E.pass_params (boxed_mi ()) task.params) old_val)
     >>= fun new_val -> Store.Tree.add store_tree ["vals"; task.key] (Value new_val)
 
   let perform_tasks (tasks:Task_queue.task list) (store_tree: Store.tree): Store.tree Lwt.t =
