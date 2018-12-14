@@ -136,6 +136,11 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     let input_remote = upstream client map_name in
     let output_remote = upstream client work_br_name in
 
+    let pp_task = Fmt.of_to_string (fun (t:Task_queue.task) -> Fmt.strf "<%s> on key %s" t.name t.key) in
+    let pp_commit = Fmt.of_to_string (fun (t:Task_queue.task list) -> match t with
+        | _::_::_ -> Fmt.strf "Perform [%a]" (Fmt.list ~sep:Fmt.comma pp_task) t
+        | _       -> Fmt.strf "Perform %a"   (Fmt.list ~sep:Fmt.comma pp_task) t) in
+
     Store.Branch.remove repo work_br_name (* We may have used this worker branch earlier. Delete it here to avoid problems *)
     >>= fun () -> Store.of_branch repo map_name
 
@@ -180,18 +185,13 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
           >>= fun () -> Store.get_tree working_br []
           >>= perform_tasks ts
           >>= remove_pending_tasks ts
-          >>= fun result_tree ->
 
-          let pp_task = Fmt.of_to_string (fun (t:Task_queue.task) -> Fmt.strf "<%s> on key %s" t.name t.key) in
-          let pp_commit = Fmt.of_to_string (fun (t:Task_queue.task list) -> match t with
-              | _::_::_ -> Fmt.strf "Perform [%a]" (Fmt.list ~sep:Fmt.comma pp_task) t
-              | _       -> Fmt.strf "Perform %a"   (Fmt.list ~sep:Fmt.comma pp_task) t) in
-
-          Logs_lwt.info ?src @@ fun m -> m "Completed %a. Pushing to remote" fmt_tasklist ts
+          (* XXX: If we use Logs_lwt here, and set the verbosity higher than info, the worker fails to push the results *)
+          >|= (fun result_tree -> (Logs.info ?src @@ fun m -> m "Completed %a. Pushing to remote" fmt_tasklist ts); result_tree)
 
           (* Now perform the commit and push to the remote. This commit should never be empty. But for
              debugging purposes we show empty commits *)
-          >>= fun () -> Store.set_tree ~allow_empty:true
+          >>= fun result_tree -> Store.set_tree ~allow_empty:true
             ~info:(Irmin_unix.info ~author:worker_name "%a" pp_commit ts)
             working_br [] result_tree
 
