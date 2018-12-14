@@ -399,9 +399,9 @@ module Make
 
     >>= fun watch -> Logs_lwt.app (fun m -> m "Waiting for the task queue to be empty, with timeout %f" timeout)
     >>= fun () ->
-    let rec inner () =
 
-      let sleep_interval = Pervasives.min (timeout /. 8.0) 1.0 in
+    let sleep_interval = ref 0.01 in
+    let rec inner () =
 
       task_queue_is_empty branch
       >>= fun is_empty -> if is_empty then (* we are done *)
@@ -414,10 +414,11 @@ module Make
       else (* we will wait for a bit *)
         task_queue_size branch
         >>= fun tq_size -> Logs_lwt.app (fun m -> m "Sleeping for a time of %f, with an inactivity count of %f. %d tasks remaining"
-                                            sleep_interval (!inactivity_count) tq_size)
-        >>= fun () -> Lwt_unix.sleep sleep_interval
-        >|= (fun () -> (inactivity_count := !inactivity_count +. sleep_interval))
-        >>= Lwt_main.yield
+                                            !sleep_interval !inactivity_count tq_size)
+        >>= fun () -> Lwt_unix.sleep (!sleep_interval)
+        >|= (fun () ->
+            inactivity_count := !inactivity_count +. !sleep_interval;
+            sleep_interval := !sleep_interval *. 2.)
         >>= inner
 
     in inner ()
