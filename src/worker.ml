@@ -52,7 +52,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
   let get_tasks_opt ~random_selection ~batch_size local_br working_br remote worker_name = (* TODO: implement this all in a transaction *)
 
     (* Get latest changes to this branch*)
-    Sync.pull_exn local_br remote `Set
+    Sync.pull_exn local_br remote (`Merge (Irmin_unix.info ~author:"worker_ERROR" "This should always be a fast-forward"))
     >>= fun () -> Store.find local_br ["task_queue"]
     >>= fun q -> match q with
     | Some Task_queue (_::_ as todo, pending) ->
@@ -147,10 +147,10 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     >>= fun working_br ->
 
     let rec task_exection_loop () =
+      let info = Irmin_unix.info ~author:"worker_ERROR" "This should always be a fast-forward" in
 
-      Sync.pull_exn local_br input_remote `Set
-      >>= fun () -> Store.merge_with_branch working_br
-        ~info:(Irmin_unix.info ~author:"worker_ERROR" "This should always be a fast-forward") map_name
+      Sync.pull_exn local_br input_remote (`Merge info)
+      >>= fun () -> Store.merge_with_branch working_br ~info map_name
       >>= Misc.handle_merge_conflict work_br_name map_name
 
       (* Attempt to take a task from the queue *)
@@ -263,7 +263,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
        | None -> Lwt.return_unit)
 
       (* Pull and check the map_request file for queued jobs *)
-      >>= fun () -> Sync.pull_exn master upstr `Set
+      >>= fun () -> Sync.pull_exn master upstr (`Merge (Irmin_unix.info ~author:"worker_ERROR" "This should always be a fast-forward"))
       >>= fun () -> JobQueue.Impl.peek_opt master
       >>= fun j -> (match j with
 
