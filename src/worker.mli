@@ -4,6 +4,7 @@ module type W = sig
     ?log_source:bool ->
     ?random_selection:bool ->
     ?batch_size:int ->
+    ?thread_count:int ->
     ?name:string ->
     ?dir:string ->
     ?poll_freq:float ->

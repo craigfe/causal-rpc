@@ -6,6 +6,7 @@ module type W = sig
     ?log_source:bool ->
     ?random_selection:bool ->
     ?batch_size:int ->
+    ?thread_count:int ->
     ?name:string ->
     ?dir:string ->
     ?poll_freq:float ->
@@ -105,7 +106,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     Lwt_list.fold_right_s remove_pending_task tasks store_tree
 
   (* Take a store tree and a task and return the tree with the operation performed *)
-  let perform_task (task:Task_queue.task) (store_tree: Store.tree): Store.tree Lwt.t =
+  let perform_task ?src (store_tree: Store.tree) (task:Task_queue.task): (Task_queue.task * Value.t) Lwt.t =
 
     let boxed_mi () = (match I.find_operation_opt task.name Impl.api with
         | Some operation -> operation
@@ -117,11 +118,15 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
         | Some _ -> Lwt.fail Internal_type_error
         | None -> Lwt.fail @@ Map.Protocol_error (Printf.sprintf "Value <%s> could not be found when attempting to perform %s operation" task.key task.name)))
 
-    >>= fun old_val -> Lwt.return ((E.pass_params (boxed_mi ()) task.params) old_val)
-    >>= fun new_val -> Store.Tree.add store_tree ["vals"; task.key] (Value new_val)
+    >>= fun old_val -> E.execute_task ?src (boxed_mi ()) task.params old_val
+    >|= fun new_val -> (task, new_val)
 
-  let perform_tasks (tasks:Task_queue.task list) (store_tree: Store.tree): Store.tree Lwt.t =
-    Lwt_list.fold_right_s perform_task tasks store_tree
+  let add_task_result ((t, v): Task_queue.task * Value.t) tree =
+    Store.Tree.add tree ["vals"; t.key] (Value v)
+
+  let perform_tasks ?src (tasks:Task_queue.task list) (store_tree: Store.tree): Store.tree Lwt.t =
+    Lwt_list.map_p (perform_task ?src store_tree) tasks
+    >>= fun tasks -> Lwt_list.fold_right_s add_task_result tasks store_tree
 
   let handle_request ~random_selection ~batch_size ?src repo client job worker_name =
 
@@ -138,7 +143,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
        merges our work back into origin/local_br, completing the cycle. NOTE: The name of
        working_br must be unique, or pushed work overwrites others' and all hell breaks loose. *)
     >>= fun local_br -> Sync.pull_exn local_br input_remote `Set
-    >>= fun () -> Store.clone ~src:local_br ~dst:(work_br_name)
+    >>= fun () -> Store.clone ~src:local_br ~dst:work_br_name
     >>= fun working_br ->
 
     let rec task_exection_loop () =
@@ -212,6 +217,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
       ?(log_source=true)
       ?(random_selection=false)
       ?(batch_size=1)
+      ?(thread_count=1)
       ?(name=random_name())
       ?dir
       ?(poll_freq = 5.0)
@@ -238,7 +244,10 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
     (* Delete the directory if it already exists... Unsafe! *)
     let ret_code = Sys.command ("rm -rf " ^ dir) in
-      if (ret_code <> 0) then invalid_arg "Unable to delete directory";
+    if (ret_code <> 0) then invalid_arg "Unable to delete directory";
+
+    (* Initialise the task executor *)
+    E.initialise ?src ~thread_count;
 
     Logs_lwt.app ?src (fun m -> m "Initialising worker with name %s for client %s" name client)
     >>= fun () -> Store.Repo.v config
