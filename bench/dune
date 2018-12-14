@@ -1,4 +1,3 @@
-(executable
-  (name datastructures)
-  (libraries trace_rpc
-             core_bench))
+(executables
+     (names parallel_workers datastructures)
+     (libraries trace_rpc core_bench))
