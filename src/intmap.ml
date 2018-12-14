@@ -10,10 +10,11 @@ end
 module O = Interface.MakeOperation(Int)
 open O
 
-let identity_op = declare "identity" return
+let identity_op  = declare "identity" return
 let increment_op = declare "increment" return
-let multiply_op = declare "multiply" Type.(int64 @-> return)
-let complex_op = declare "complex" Type.(int32 @-> int64 @-> string @-> unit @-> return)
+let multiply_op  = declare "multiply" Type.(int64 @-> return)
+let sleep_op     = declare "sleep" Type.(float @-> return)
+let complex_op   = declare "complex" Type.(int32 @-> int64 @-> string @-> unit @-> return)
 
 module Definition = struct
   module Val = Int
@@ -23,6 +24,7 @@ module Definition = struct
   let api = define [
       describe identity_op;
       describe increment_op;
+      describe sleep_op;
       describe complex_op; (* Note: the order of definition doesn't matter *)
       describe multiply_op;
     ]
@@ -35,6 +37,7 @@ module Implementation: Interface.IMPL with type Val.t = int64 = struct
 
   let identity x = x
   let increment x = Int64.add Int64.one x
+  let sleep f x = (Unix.sleepf f; increment x)
   let multiply = Int64.mul
   let complex i32 i64 s () = match Int64.of_string_opt s with
     | Some i -> Int64.mul (Int64.mul (Int64.mul (Int64.of_int32 i32) i64) i)
@@ -43,6 +46,7 @@ module Implementation: Interface.IMPL with type Val.t = int64 = struct
   let api = define [
       implement identity_op identity;
       implement increment_op increment;
+      implement sleep_op sleep;
       implement multiply_op multiply;
       implement complex_op complex
     ]
