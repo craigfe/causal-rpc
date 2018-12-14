@@ -3,6 +3,7 @@ let suite = [
   "Task queues", Test_task_queues.tests;
   "Local map ops", Test_map.tests;
   "Single-worker maps", Test_single_worker.tests;
+  "Multi-threaded worker maps", Test_parallel_worker.tests;
   "Multiple-worker maps", Test_multiple_worker.tests;
   (* "Stress testing", Test_stress.tests *)
 ]

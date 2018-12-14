@@ -105,9 +105,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
   let remove_pending_tasks (tasks: Task_queue.task list) (store_tree: Store.tree): Store.tree Lwt.t =
     Lwt_list.fold_right_s remove_pending_task tasks store_tree
 
-  (* Take a store tree and a task and return the tree with the operation performed *)
   let perform_task ?src (store_tree: Store.tree) (task:Task_queue.task): (Task_queue.task * Value.t) Lwt.t =
-
     let boxed_mi () = (match I.find_operation_opt task.name Impl.api with
         | Some operation -> operation
         | None -> invalid_arg "Operation not found") in
@@ -121,10 +119,11 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     >>= fun old_val -> E.execute_task ?src (boxed_mi ()) task.params old_val
     >|= fun new_val -> (task, new_val)
 
-  let add_task_result ((t, v): Task_queue.task * Value.t) tree =
-    Store.Tree.add tree ["vals"; t.key] (Value v)
-
+  (* Take a store tree and list of tasks and return the tree with the tasks performed *)
   let perform_tasks ?src (tasks:Task_queue.task list) (store_tree: Store.tree): Store.tree Lwt.t =
+    let add_task_result ((t, v): Task_queue.task * Value.t) tree =
+      Store.Tree.add tree ["vals"; t.key] (Value v) in
+
     Lwt_list.map_p (perform_task ?src store_tree) tasks
     >>= fun tasks -> Lwt_list.fold_right_s add_task_result tasks store_tree
 
