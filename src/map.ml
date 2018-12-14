@@ -358,6 +358,7 @@ module Make
     >>= fun () ->
 
     let inactivity_count = ref 0.0 in
+    let sleep_interval = ref 0.01 in
 
     (* The callback to be executed when we detect changes to the repository.
        Note: here we don't explicitly signal the workers that are available for a
@@ -376,7 +377,7 @@ module Make
             | Some j when String.equal map_name (JobQueue.Impl.job_to_string j) ->
 
               Logs_lwt.debug (fun m -> m "Resetting count due to activity on branch %s" br_name)
-              >|= (fun () -> inactivity_count := 0.0)
+              >|= (fun () -> inactivity_count := 0.0; sleep_interval := !sleep_interval /. 2.)
 
               (* Merge the work from this branch *)
               >>= fun () -> Store.merge_with_branch branch
@@ -400,7 +401,6 @@ module Make
     >>= fun watch -> Logs_lwt.app (fun m -> m "Waiting for the task queue to be empty, with timeout %f" timeout)
     >>= fun () ->
 
-    let sleep_interval = ref 0.01 in
     let rec inner () =
 
       task_queue_is_empty branch
