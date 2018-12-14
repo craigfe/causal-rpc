@@ -1,6 +1,7 @@
 (library
 	(name trace_rpc)
 	(public_name trace_rpc)
+	(flags (-thread))
 	(preprocess (pps ppx_deriving.std))
 	(libraries
 		alcotest
