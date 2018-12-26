@@ -40,21 +40,29 @@ let split_sequential n l =
 let split_random n l =
   if n < 0 then invalid_arg "Cannot take a negative number of items from a list";
 
-  (* Generate random numbers until we have n of them *)
-  let s = ref IntSet.empty in
-  while IntSet.cardinal !s < n do
-    let i = Random.int (List.length l) in
-    s := IntSet.add i !s
-  done;
+  let is =
+    (* if n = 1, generate the index of the element to select *)
+    if n = 1 then [Random.int (List.length l)]
 
-  let is = List.sort Pervasives.compare (IntSet.elements !s) in
+    (* otherwise, generate random numbers until we have n of them *)
+    else
+      let s = ref IntSet.empty in
+      while IntSet.cardinal !s < n do
+        let i = Random.int (List.length l) in
+        s := IntSet.add i !s
+      done;
+
+      List.sort Pervasives.compare (IntSet.elements !s)
+  in
+
 
   let rec inner i is list (l_acc, r_acc) = match is, list with
-    | []   , xs               -> (l_acc, r_acc @ xs)
+    | []   , xs               -> (List.rev l_acc, (List.rev r_acc) @ xs)
     | _    , []               -> invalid_arg "Attempted to take too many items from the list"
-    | c::is, x::xs when c = i -> inner (n+1) is xs (x::l_acc, r_acc)
-    | _::is, x::xs            -> inner (n+1) is xs (l_acc, x::r_acc)
-  in inner 0 is l ([], [])
+    | c::is, x::xs when c = i -> inner (i+1) is xs (x::l_acc, r_acc)
+    | is, x::xs               -> inner (i+1) is xs (l_acc, x::r_acc)
+  in
+  inner 0 is l ([], [])
 
 let timestamp () =
   let ts = Unix.gettimeofday() in

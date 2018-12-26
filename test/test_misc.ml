@@ -30,19 +30,19 @@ let test_split_random () =
     |> Alcotest.(check (pair int int)) desc expected
   in
 
-  split_sequential 0 []
+  split_random 0 []
   |> test_split_sizes "Empty list" (0, 0);
 
-  split_sequential 0 [1;4;3;2;5]
+  split_random 0 [1;4;3;2;5]
   |> test_split_sizes "Empty partition" (0, 5);
 
-  split_sequential 5 [5;3;4;2;1]
+  split_random 5 [5;3;4;2;1]
   |> test_split_sizes "Full partition" (5, 0);
 
-  split_sequential 1 [1;3;1]
+  split_random 1 [1;3;1]
   |> test_split_sizes "Non-trivial partition 1" (1, 2);
 
-  split_sequential 2 [1;3;1]
+  split_random 2 [1;3;1]
   |> test_split_sizes "Non-trivial partition 2" (2, 1)
 
 let tests = [
