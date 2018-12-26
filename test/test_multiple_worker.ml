@@ -2,7 +2,7 @@ open Lwt.Infix
 open Trace_rpc
 open Intmap
 
-let worker_pool ?batch_size switch n dir =
+let worker_pool ?batch_size ?two_phase switch n dir =
   let rec inner n dir =
     match n with
     | 0 -> []
@@ -12,6 +12,7 @@ let worker_pool ?batch_size switch n dir =
                ~config:(Worker.Config.make
                           ~random_selection:true
                           ?batch_size
+                          ?two_phase
                           ~name:("worker_" ^ (string_of_int n))
                           ~poll_freq:0.1 ())
                ~dir:("/tmp/irmin/test_multiple_worker/worker/" ^ dir ^ "/worker_" ^ (string_of_int n))
@@ -21,6 +22,24 @@ let worker_pool ?batch_size switch n dir =
   in inner n dir
 
 let root = "/tmp/irmin/test_multiple_worker/"
+
+
+let test_single_phase s () =
+  let values = Helpers.sequence_list 1 10 in
+  let keys = List.map Helpers.key_from_int values in
+
+  IntMap.empty ~directory:(root ^ "single_phase") ()
+  >>= IntMap.add_all (Misc.zip keys (List.map Int64.of_int values))
+  >>= fun m -> Lwt.pick @@ (worker_pool ~two_phase:false s 4 "single_phase") @ [
+      IntMap.map ~timeout:10.0 multiply_op (Interface.Param (Type.int64, Int64.of_int 10, Interface.Unit)) m
+      >|= fun _ -> ()
+    ]
+  >>= fun () -> IntMap.values m
+  >|= List.map Int64.to_int
+  >|= List.sort compare
+  >|= Alcotest.(check (list int)) "Single request on many keys"
+    (List.map (fun x -> 10 * x) values)
+
 
 let test_small_map s () =
   IntMap.empty ~directory:(root ^ "small_map") ()
@@ -36,6 +55,7 @@ let test_small_map s () =
           >>= fun () -> inner (n + 1)
       in inner 1
     ]
+
 
 let test_medium_map s () =
   let values = Helpers.sequence_list 1 4 in
@@ -58,6 +78,7 @@ let test_medium_map s () =
       in inner 1
     ]
 
+
 let test_large_map s () =
   let values = Helpers.sequence_list 1 12 in
   let keys = List.map Helpers.key_from_int values in
@@ -73,6 +94,7 @@ let test_large_map s () =
   >|= List.sort compare
   >|= Alcotest.(check (list int)) "Single request on many keys"
     (List.map (fun x -> 10 * x) values)
+
 
 let test_batched_work s () =
   let values = Helpers.sequence_list 1 12 in
@@ -92,6 +114,7 @@ let test_batched_work s () =
 
 
 let tests = [
+  Alcotest_lwt.test_case "Single-phase workers" `Slow test_single_phase;
   Alcotest_lwt.test_case "Small map" `Slow test_small_map;
   Alcotest_lwt.test_case "Medium-sized map" `Slow test_medium_map;
   Alcotest_lwt.test_case "Large map" `Slow test_large_map;

@@ -9,27 +9,38 @@ let random_name ?src () =
 
 module Config = struct
   type t = {
-    log_source: bool option;
-    random_selection: bool option;
-    batch_size: int option;
-    thread_count: int option;
-    name: string option;
-    poll_freq: float option;
+    log_source: bool;
+    random_selection: bool;
+    batch_size: int;
+    thread_count: int;
+    name: string;
+    poll_freq: float;
+    two_phase: bool;
   }
 
   let def opt d = match opt with
     | Some v -> v
     | None -> d
 
-  let make ?log_source ?random_selection ?batch_size ?thread_count ?name ?poll_freq () =
-    {log_source; random_selection; batch_size; thread_count; name; poll_freq}
+  let make ?log_source ?random_selection ?batch_size
+      ?thread_count ?name ?poll_freq ?two_phase () =
+    {
+      log_source       = def log_source true;
+      random_selection = def random_selection true;
+      batch_size       = def batch_size 1;
+      thread_count     = def thread_count 1;
+      name             = def name (random_name());
+      poll_freq        = def poll_freq 5.0;
+      two_phase        = def two_phase true
+    }
 
-  let log_source t = def t.log_source true
-  let random_selection t = def t.random_selection true
-  let batch_size t = def t.batch_size 1
-  let thread_count t = def t.thread_count 1
-  let name t = def t.name (random_name())
-  let poll_freq t = def t.poll_freq 5.0
+  let log_source t       = t.log_source
+  let random_selection t = t.random_selection
+  let batch_size t       = t.batch_size
+  let thread_count t     = t.thread_count
+  let name t             = t.name
+  let poll_freq t        = t.poll_freq
+  let two_phase t        = t.two_phase
 end
 
 module type W = sig
@@ -154,7 +165,11 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     >>= fun tasks -> Lwt_list.fold_right_s add_task_result tasks store_tree
 
 
-  let handle_request ~random_selection ~batch_size ?src repo client job worker_name =
+  let handle_request
+      ~random_selection
+      ~batch_size
+      ~two_phase
+      ?src repo client job worker_name =
 
     (* Checkout the branch *)
     let map_name = JobQueue.Impl.job_to_string job in
@@ -202,11 +217,14 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
            | n when n < 11 -> Logs_lwt.info ?src (fun m -> m "Attempting to consume %d tasks: %a" n fmt_tasklist ts)
            | n             -> Logs_lwt.info ?src (fun m -> m "Attempting to consume %d tasks" n))
 
-          >>= fun () -> Sync.push working_br output_remote (* We first tell the remote that we intend to work on this item *)
-          >>= fun res -> (match res with
-              | Ok () -> Lwt.return_unit
-              | Error pe -> Lwt.fail @@ Push_error pe
-            )
+          >>= (fun () -> if two_phase then
+                  Sync.push working_br output_remote (* We first tell the remote that we intend to work on this item *)
+                  >>= fun res -> (match res with
+                      | Ok () -> Lwt.return_unit
+                      | Error pe -> Lwt.fail @@ Push_error pe
+                    )
+                else Lwt.return_unit)
+
           >>= fun () -> Logs_lwt.info ?src (fun m -> m "Starting to perform %a" fmt_tasklist ts)
 
           (* We get the trees with the tasks having been a) performed to the map and b) removed from the pending queue *)
@@ -245,6 +263,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     let batch_size = C.batch_size conf in
     let thread_count = C.thread_count conf in
     let poll_freq = C.poll_freq conf in
+    let two_phase = C.two_phase conf in
 
     if String.sub name 0 5 |> String.equal "map--" then
       invalid_arg "Worker names cannot begin with map--";
@@ -295,7 +314,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
             Logs_lwt.info ?src (fun m -> m "Detected a map request on branch %s"
                                    (JobQueue.Impl.job_to_string br_name))
-            >>= fun () -> handle_request ~random_selection ~batch_size ?src s client br_name name
+            >>= fun () -> handle_request ~random_selection ~batch_size ~two_phase ?src s client br_name name
             >>= fun () -> Logs_lwt.info ?src (fun m -> m "Finished handling request on branch %s"
                                                  (JobQueue.Impl.job_to_string br_name))
 

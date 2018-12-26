@@ -7,6 +7,7 @@ module Config : sig
     -> ?thread_count:int
     -> ?name:string
     -> ?poll_freq:float
+    -> ?two_phase:bool
     -> unit -> t
 
   val log_source: t -> bool
@@ -15,6 +16,7 @@ module Config : sig
   val thread_count: t -> int
   val name: t -> string
   val poll_freq: t -> float
+  val two_phase: t -> bool
 end
 
 module type W = sig
