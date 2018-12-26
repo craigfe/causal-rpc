@@ -1,16 +1,30 @@
+module Config : sig
+  type t
+
+  val make: ?log_source:bool
+    -> ?random_selection:bool
+    -> ?batch_size:int
+    -> ?thread_count:int
+    -> ?name:string
+    -> ?poll_freq:float
+    -> unit -> t
+
+  val log_source: t -> bool
+  val random_selection: t -> bool
+  val batch_size: t -> int
+  val thread_count: t -> int
+  val name: t -> string
+  val poll_freq: t -> float
+end
+
 module type W = sig
   val run:
     ?switch:Lwt_switch.t ->
-    ?log_source:bool ->
-    ?random_selection:bool ->
-    ?batch_size:int ->
-    ?thread_count:int ->
-    ?name:string ->
+    ?config:Config.t ->
     ?dir:string ->
-    ?poll_freq:float ->
     client:string -> unit -> unit Lwt.t
-    (** run ~name ~dir c () returns a promise of a worker computation with a commit
-        author ~name that listens for work requests from client c and performs the work
+    (** run c () returns a promise of a worker computation with a commit author
+        ~name that listens for work requests from client c and performs the work
         in repository ~dir *)
 end
 

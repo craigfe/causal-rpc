@@ -4,10 +4,12 @@ open Intmap
 
 let worker ?batch_size switch dir = IntWorker.run
     ~switch
-    ?batch_size
+    ~config:(Worker.Config.make
+       ?batch_size
+       ~poll_freq:0.01 ())
     ~dir:("/tmp/irmin/test_single_worker/worker/" ^ dir)
     ~client:("file:///tmp/irmin/test_single_worker/" ^ dir)
-    ~poll_freq:0.01 ()
+    ()
 
 let worker_pool switch n dir =
   let rec inner n dir =
@@ -16,10 +18,12 @@ let worker_pool switch n dir =
     | n -> let w =
              IntWorker.run
                ~switch
-               ~name:("worker_" ^ (string_of_int n))
+               ~config:(Worker.Config.make
+                          ~name:("worker_" ^ (string_of_int n))
+                          ~poll_freq:0.01 ())
                ~dir:("/tmp/irmin/test_single_worker/worker/" ^ dir ^ "/worker_" ^ (string_of_int n))
                ~client:("file:///tmp/irmin/test_single_worker/" ^ dir)
-               ~poll_freq:0.01 ()
+               ()
       in w :: inner (n-1) dir
   in inner n dir
 

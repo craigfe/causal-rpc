@@ -9,12 +9,14 @@ let worker_pool ?batch_size switch n dir =
     | n -> let w =
              IntWorker.run
                ~switch
-               ~random_selection:true
-               ?batch_size
-               ~name:("worker_" ^ (string_of_int n))
+               ~config:(Worker.Config.make
+                          ~random_selection:true
+                          ?batch_size
+                          ~name:("worker_" ^ (string_of_int n))
+                          ~poll_freq:0.1 ())
                ~dir:("/tmp/irmin/test_multiple_worker/worker/" ^ dir ^ "/worker_" ^ (string_of_int n))
                ~client:("file:///tmp/irmin/test_multiple_worker/" ^ dir)
-               ~poll_freq:0.1 ()
+               ()
       in w :: inner (n-1) dir
   in inner n dir
 

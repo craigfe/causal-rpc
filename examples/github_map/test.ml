@@ -3,9 +3,10 @@ open Api
 open Lwt.Infix
 let global_root = "/tmp/irmin/github_map/test/"
 let worker dir = GithubWorker.run
+    ~config:(Trace_rpc.Worker.Config.make ~poll_freq:0.01 ())
     ~dir:(global_root ^ "/worker/" ^ dir)
     ~client:("file://" ^ global_root ^ dir)
-    ~poll_freq:0.01 ()
+    ()
 
 let count_commit_test _ () =
   Trace_rpc.Misc.set_reporter ();

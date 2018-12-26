@@ -1,21 +1,49 @@
 open Lwt.Infix
+open Task_queue
+open Map
+
+let random_name ?src () =
+  Misc.generate_rand_string ~length:8 ()
+  |> Pervasives.(^) "worker--"
+  |> fun x -> Logs.info ?src (fun m -> m "No name supplied. Generating random worker name %s" x); x
+
+module Config = struct
+  type t = {
+    log_source: bool option;
+    random_selection: bool option;
+    batch_size: int option;
+    thread_count: int option;
+    name: string option;
+    poll_freq: float option;
+  }
+
+  let def opt d = match opt with
+    | Some v -> v
+    | None -> d
+
+  let make ?log_source ?random_selection ?batch_size ?thread_count ?name ?poll_freq () =
+    {log_source; random_selection; batch_size; thread_count; name; poll_freq}
+
+  let log_source t = def t.log_source true
+  let random_selection t = def t.random_selection true
+  let batch_size t = def t.batch_size 1
+  let thread_count t = def t.thread_count 1
+  let name t = def t.name (random_name())
+  let poll_freq t = def t.poll_freq 5.0
+end
 
 module type W = sig
   val run:
     ?switch:Lwt_switch.t ->
-    ?log_source:bool ->
-    ?random_selection:bool ->
-    ?batch_size:int ->
-    ?thread_count:int ->
-    ?name:string ->
+    ?config:Config.t ->
     ?dir:string ->
-    ?poll_freq:float ->
     client:string -> unit -> unit Lwt.t
 end
 
 module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = struct
   include M
 
+  module C = Config
   module I = Interface.MakeImplementation(Impl.Val)
   module E = Executor.Make(I)
 
@@ -38,13 +66,6 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
       in Lwt_main.run lwt
     else
       Store.remote uri
-
-
-  let random_name ?src () =
-    Misc.generate_rand_string ~length:8 ()
-    |> Pervasives.(^) "worker--"
-    |> fun x -> Logs.info ?src (fun m -> m "No name supplied. Generating random worker name %s" x); x
-
 
   let directory_from_name ?src name =
     let dir = "/tmp/irmin/" ^ name in
@@ -215,20 +236,15 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
           >>= Lwt_main.yield
           >>= task_exection_loop
         end
-
-
     in task_exection_loop ()
 
-  let run
-      ?switch
-      ?(log_source=true)
-      ?(random_selection=false)
-      ?(batch_size=1)
-      ?(thread_count=1)
-      ?(name=random_name())
-      ?dir
-      ?(poll_freq = 5.0)
-      ~client () =
+
+  let run ?switch ?config:(conf = C.make ()) ?dir ~client () =
+    let name = C.name conf in
+    let random_selection = C.random_selection conf in
+    let batch_size = C.batch_size conf in
+    let thread_count = C.thread_count conf in
+    let poll_freq = C.poll_freq conf in
 
     if String.sub name 0 5 |> String.equal "map--" then
       invalid_arg "Worker names cannot begin with map--";
@@ -238,7 +254,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
     if random_selection then Random.self_init (); (* Initialise the random number generator *)
 
-    let src = if log_source then Some (Logs.Src.create name) else None in
+    let src = if C.log_source conf then Some (Logs.Src.create name) else None in
     let dir = match dir with
       | Some d -> d
       | None -> directory_from_name ?src name in
