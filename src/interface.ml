@@ -50,12 +50,12 @@ module MakeOperation(T: Irmin.Contents.S): OPERATION with module Val = T = struc
   let return = BaseType
   let (@->) p f = ParamType (p, f)
 
-  let declare name typ: 'a Unboxed.t = {name; typ}
+  let declare name typ: 'a Unboxed.t = {Unboxed.name = name; Unboxed.typ = typ}
 
   let compare a b =
-    match a with
-    | B {name = n1; _} -> match b with
-      | B {name = n2; _} -> String.compare n1 n2
+    match (a, b) with
+    | B {Unboxed.name = n1; _}, B {Unboxed.name = n2; _} ->
+      String.compare n1 n2
 end
 
 

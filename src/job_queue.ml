@@ -1,4 +1,5 @@
 open Lwt.Infix
+open Map
 
 exception Empty_queue
 
