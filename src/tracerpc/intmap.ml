@@ -37,7 +37,16 @@ module Implementation: Interface.IMPL with type Val.t = int64 = struct
 
   let identity x = x
   let increment x = Int64.add Int64.one x
-  let sleep f x = (Unix.sleepf f; increment x)
+  (* let sleep f x = (Unix.sleepf f; increment x) *)
+
+  let sleep f _ =
+    let imax = Pervasives.int_of_float @@ f *. 10_000_000. in
+    let rec inner n acc = match n with
+      | 0 -> acc
+      | n -> inner (n-1) (acc + n) in
+
+    Int64.of_int(inner imax 0)
+
   let multiply = Int64.mul
   let complex i32 i64 s () = match Int64.of_string_opt s with
     | Some i -> Int64.mul (Int64.mul (Int64.mul (Int64.of_int32 i32) i64) i)
@@ -53,7 +62,7 @@ module Implementation: Interface.IMPL with type Val.t = int64 = struct
 end
 
 module IntMap = Map.Make
-    (Irmin_unix.Git.FS.G)
+    (Irmin_unix.Git.Mem.G)
     (Definition)
     (Job_queue.Type)
     (Job_queue.Make)

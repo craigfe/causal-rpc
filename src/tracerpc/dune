@@ -10,7 +10,7 @@
 		fmt.cli
 		fmt.tty
 		irmin
-		irmin-unix
+    irmin-unix
 		logs.cli
 		logs.fmt
 		lwt
