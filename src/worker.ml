@@ -39,21 +39,22 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     else
       Store.remote uri
 
+
   let random_name ?src () =
     Misc.generate_rand_string ~length:8 ()
     |> Pervasives.(^) "worker--"
     |> fun x -> Logs.info ?src (fun m -> m "No name supplied. Generating random worker name %s" x); x
+
 
   let directory_from_name ?src name =
     let dir = "/tmp/irmin/" ^ name in
     Logs.info ?src (fun m -> m "No directory supplied. Using default directory %s" dir);
     dir
 
-  let get_tasks_opt ~random_selection ~batch_size local_br working_br remote worker_name = (* TODO: implement this all in a transaction *)
 
-    (* Get latest changes to this branch*)
-    Sync.pull_exn local_br remote (`Merge (Irmin_unix.info ~author:"worker_ERROR" "This should always be a fast-forward"))
-    >>= fun () -> Store.find local_br ["task_queue"]
+  let get_tasks_opt ~random_selection ~batch_size working_br remote worker_name = (* TODO: implement this all in a transaction *)
+
+    Store.find working_br ["task_queue"]
     >>= fun q -> match q with
     | Some Task_queue (_::_ as todo, pending) ->
 
@@ -91,6 +92,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     | None -> Lwt.return [] (* No task to be performed *)
     | Some _ -> Lwt.fail Internal_type_error
 
+
   (* Take a store_tree and remove a pending task from it *)
   let remove_pending_task (task: Task_queue.task) (store_tree: Store.tree): Store.tree Lwt.t =
 
@@ -102,8 +104,10 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
             (todo, List.filter (fun t -> t <> task) pending))
     >>= Store.Tree.add store_tree ["task_queue"]
 
+
   let remove_pending_tasks (tasks: Task_queue.task list) (store_tree: Store.tree): Store.tree Lwt.t =
     Lwt_list.fold_right_s remove_pending_task tasks store_tree
+
 
   let perform_task ?src (store_tree: Store.tree) (task:Task_queue.task): (Task_queue.task * Value.t) Lwt.t =
     let boxed_mi () = (match I.find_operation_opt task.name Impl.api with
@@ -119,6 +123,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     >>= fun old_val -> E.execute_task ?src (boxed_mi ()) task.params old_val
     >|= fun new_val -> (task, new_val)
 
+
   (* Take a store tree and list of tasks and return the tree with the tasks performed *)
   let perform_tasks ?src (tasks:Task_queue.task list) (store_tree: Store.tree): Store.tree Lwt.t =
     let add_task_result ((t, v): Task_queue.task * Value.t) tree =
@@ -126,6 +131,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
     Lwt_list.map_p (perform_task ?src store_tree) tasks
     >>= fun tasks -> Lwt_list.fold_right_s add_task_result tasks store_tree
+
 
   let handle_request ~random_selection ~batch_size ?src repo client job worker_name =
 
@@ -154,11 +160,13 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
       let info = Irmin_unix.info ~author:"worker_ERROR" "This should always be a fast-forward" in
 
       Sync.pull_exn local_br input_remote (`Merge info)
-      >>= fun () -> Store.merge_with_branch working_br ~info map_name
+      >>= fun () -> Store.merge_with_branch working_br
+        ~info:(Irmin_unix.info ~author:worker_name "Updating world-view on %s" map_name)
+        map_name
       >>= Misc.handle_merge_conflict work_br_name map_name
 
       (* Attempt to take a task from the queue *)
-      >>= fun () -> get_tasks_opt ~random_selection ~batch_size working_br working_br input_remote worker_name
+      >>= fun () -> get_tasks_opt ~random_selection ~batch_size working_br input_remote worker_name
       >>= fun tasks -> match tasks with
 
       | [] -> Logs_lwt.info ?src @@ fun m -> m "No available tasks in the task queue."
