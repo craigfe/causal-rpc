@@ -49,6 +49,6 @@ module Make(I: Interface.IMPL_MAKER): S with module I = I = struct
   let execute_task ?src boxed_mi params old_value =
     let func = fun () -> pass_params ?src boxed_mi params old_value in
 
-    Lwt.return (func ())
-    (* Lwt_preemptive.detach func () *)
+    (* Lwt.return (func ()) *)
+    Lwt_preemptive.detach func ()
   end
