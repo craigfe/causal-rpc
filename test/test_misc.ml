@@ -1,11 +1,6 @@
 open Trace_rpc
 open Misc
 
-(** Simple tests of miscellaneous features of the library *)
-let test_names () =
-  Alcotest.(check string) "The random name function begins with `server--`"
-	  (String.sub (Server.random_server_name()) 0 8) "server--"
-
 let test_split_sequential () =
   let test = Alcotest.(check (pair (list int) (list int))) in
 
@@ -46,7 +41,6 @@ let test_split_random () =
   |> test_split_sizes "Non-trivial partition 2" (2, 1)
 
 let tests = [
-  "Name generation", `Quick, test_names;
   "Sequential list partitioning", `Quick, test_split_sequential;
   "Random list partitioning", `Quick, test_split_random;
 ]
