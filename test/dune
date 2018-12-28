@@ -5,4 +5,5 @@
     digestif
 		alcotest
     alcotest-lwt
-		trace_rpc))
+		trace_rpc
+    trace_rpc_unix))

@@ -1,3 +1,3 @@
 
+module Info = Info
 module Worker = Worker
-module Server = Server

@@ -16,6 +16,7 @@ let multiply_op  = declare "multiply" Type.(int64 @-> return)
 let sleep_op     = declare "sleep" Type.(float @-> return)
 let complex_op   = declare "complex" Type.(int32 @-> int64 @-> string @-> unit @-> return)
 
+
 module Definition = struct
   module Val = Int
   module D = Interface.Description(Int)
@@ -29,6 +30,7 @@ module Definition = struct
       describe multiply_op;
     ]
 end
+
 
 module Implementation: Interface.IMPL with type Val.t = int64 = struct
   module Val = Int
@@ -61,10 +63,12 @@ module Implementation: Interface.IMPL with type Val.t = int64 = struct
     ]
 end
 
-module IntMap = Map.Make
-    (Irmin_unix.Git.Mem.G)
+module IntMap (I: Info.S) (G: Irmin_git.G) (B: Store.MAKER) = Map.Make
+    (G)
+    (I)
+    (B)
     (Definition)
-    (Job_queue.Type)
     (Job_queue.Make)
 
-module IntWorker = Worker.Make(IntMap)(Implementation)
+module IntWorker (I: Info.S) (G: Irmin_git.G) (B: Store.MAKER) =
+  Worker.Make(IntMap(I)(G)(B))(Implementation)

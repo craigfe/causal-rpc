@@ -2,30 +2,21 @@ open Lwt.Infix
 open Map
 
 exception Empty_queue
-
-module Type = struct
-  type t = string list
-  type job = string
-
-  let t = Irmin.Type.list Irmin.Type.string
-  let job = Irmin.Type.string
-end
-
 module Make
+    (Info: Info.S)
     (Val: Irmin.Contents.S)
     (St: Store.S
-        with type key = Irmin.Path.String_list.t
-         and type step = string
-         and module Key = Irmin.Path.String_list
-         and type contents = (Val.t, Type.t) Map.contents
-         and type branch = string)
+     with type key = Irmin.Path.String_list.t
+      and type step = string
+      and module Key = Irmin.Path.String_list
+      and type contents = Val.t Map.contents
+      and type branch = string)
 
   : Map.JOB_QUEUE with module Store = St = struct
 
   type t = string list
   type job = string
 
-  module Type = Type
   module Store = St
 
   module type IMPL = sig
@@ -59,7 +50,7 @@ module Make
     let push j m = (* TODO: make this atomic *)
       of_map m
       >>= fun js -> Store.set m
-        ~info:(Irmin_unix.info ~author:"map" "Add %s to job queue" j)
+        ~info:(Info.make ~author:"map" "Add %s to job queue" j)
         ["job_queue"]
         (Job_queue (j::js))
       >|= fun res -> match res with
@@ -72,7 +63,7 @@ module Make
       >>= fun js -> match js with
       | (j::js) ->
         Store.set m
-          ~info:(Irmin_unix.info ~author:"map" "Remove %s from job queue" j)
+          ~info:(Info.make ~author:"map" "Remove %s from job queue" j)
           ["job_queue"]
           (Job_queue js)
         >|= fun res -> (match res with

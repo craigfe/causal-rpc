@@ -2,31 +2,19 @@ open Lwt.Infix
 
 exception Empty_queue
 
-type ('v, 'jq) contents =
+type job = string
+type job_queue = string list
+
+let job = Irmin.Type.string
+let job_queue = Irmin.Type.(list string)
+
+type 'v contents =
   | Value of 'v
   | Task_queue of Task_queue.t
-  | Job_queue of 'jq
-
-module type QUEUE_TYPE = sig
-  type t
-  type job
-
-  val t: t Irmin.Type.t
-  val job: job Irmin.Type.t
-end
+  | Job_queue of job_queue
 
 module type JOB_QUEUE = sig
-  type t
-  (** The type of job queues *)
-
-  type job
-  (** The type of jobs *)
-
   module Store: Irmin.KV
-
-  module Type: QUEUE_TYPE
-    with type t = t
-     and type job = job
 
   module type IMPL = sig
     val job_of_string: string -> job
@@ -42,10 +30,20 @@ module type JOB_QUEUE = sig
   module Impl: IMPL
 end
 
-module MakeContents (Val: Irmin.Contents.S) (JQueueType: QUEUE_TYPE): Irmin.Contents.S
-  with type t = (Val.t, JQueueType.t) contents = struct
+module type JOB_QUEUE_MAKER = functor
+  (Info: Info.S)
+  (Val: Irmin.Contents.S)
+  (St: Store.S
+      with type key = Irmin.Path.String_list.t
+       and type step = string
+       and module Key = Irmin.Path.String_list
+       and type contents = Val.t contents
+       and type branch = string) -> JOB_QUEUE with module Store = St
 
-  type t = (Val.t, JQueueType.t) contents
+module MakeContents (Val: Irmin.Contents.S): Irmin.Contents.S
+  with type t = Val.t contents = struct
+
+  type t = Val.t contents
 
   let t =
     let open Irmin.Type in
@@ -55,7 +53,7 @@ module MakeContents (Val: Irmin.Contents.S) (JQueueType: QUEUE_TYPE): Irmin.Cont
         | Job_queue js -> branch_name js)
     |~ case1 "Value" Val.t (fun v -> Value v)
     |~ case1 "Task_queue" Task_queue.t (fun q -> Task_queue q)
-    |~ case1 "Job_queue" JQueueType.t (fun js -> Job_queue js)
+    |~ case1 "Job_queue" job_queue (fun js -> Job_queue js)
     |> sealv
 
   let merge ~old t1 t2 =
@@ -66,7 +64,6 @@ module MakeContents (Val: Irmin.Contents.S) (JQueueType: QUEUE_TYPE): Irmin.Cont
     match (old, t1, t2) with
     | Some Value o, Value a, Value b ->
 
-      (* TODO: work out why optional merge combinators are default in Irmin.Contents.S *)
       (Irmin.Merge.f Val.merge) ~old:(Irmin.Merge.promise (Some o)) (Some a) (Some b)
       >>=* fun x -> (match x with
           | Some x -> Irmin.Merge.ok (Value x)
@@ -95,11 +92,10 @@ module type S = sig
   module Value: Irmin.Contents.S
 
   type key = string
-  type queue
 
   type t
 
-  module Contents: Irmin.Contents.S with type t = (Value.t, queue) contents
+  module Contents: Irmin.Contents.S with type t = Value.t contents
   module Store: Store.S
     with type key = Irmin.Path.String_list.t
      and type step = string
@@ -110,13 +106,14 @@ module type S = sig
   module Sync: Irmin.SYNC with type db = Store.t
   module JobQueue: JOB_QUEUE with module Store = Store
   module Operation: Interface.OPERATION with module Val = Value
+  module Info: Info.S
 
   exception Internal_type_error
   exception Store_error of Store.write_error
   type 'a params = 'a Interface.MakeOperation(Value).params
 
   (* Here for testing purposes *)
-  val generate_task_queue: 'a Operation.Unboxed.t -> 'a params -> t -> (Value.t, queue) contents Lwt.t
+  val generate_task_queue: 'a Operation.Unboxed.t -> 'a params -> t -> Value.t contents Lwt.t
   (* ------------------------- *)
 
   val of_store: Sync.db -> t
@@ -137,33 +134,24 @@ end
 
 module Make
     (GitBackend: Irmin_git.G)
+    (InfoMaker: Info.S)
+    (Backend: Store.MAKER)
     (Desc: Interface.DESC)
-    (QueueType: QUEUE_TYPE)
-    (JQueueMake: functor
-       (Val: Irmin.Contents.S)
-       (St: Store.S
-        with type key = Irmin.Path.String_list.t
-         and type step = string
-         and module Key = Irmin.Path.String_list
-         and type contents = (Val.t, QueueType.t) contents
-         and type branch = string)
-       -> (JOB_QUEUE with module Store = St)
-    ): S
+    (JQueueMake: JOB_QUEUE_MAKER): S
   with module Value = Desc.Val
    and module Operation = Interface.MakeOperation(Desc.Val)
-   and type queue = QueueType.t = struct
-
+= struct
 
   module Value = Desc.Val
-  module Contents = MakeContents(Desc.Val)(QueueType)
-  module Store = Store.Make(GitBackend)(Contents)
+  module Contents = MakeContents(Desc.Val)
+  module Store = Backend(GitBackend)(Contents)
   module Sync = Irmin.Sync(Store)
-  module JobQueue = JQueueMake(Desc.Val)(Store)
+  module JobQueue = JQueueMake(InfoMaker)(Desc.Val)(Store)
   module Operation = Interface.MakeOperation(Desc.Val)
+  module Info = InfoMaker
 
   type key = string
   type value = Value.t
-  type queue = QueueType.t
   type 'a params = 'a Operation.params
 
   type t = {
@@ -211,7 +199,7 @@ module Make
 
     Store.set
       ~allow_empty:true
-      ~info:(Irmin_unix.info ~author:"client" "%s" message)
+      ~info:(Info.make ~author:"client" "%s" message)
       l
       ["vals"; key]
       (Value value)
@@ -245,7 +233,7 @@ module Make
 
     >>= fun tree -> Store.set_tree
       ~allow_empty:true
-      ~info:(Irmin_unix.info ~author:"client" "%s" message)
+      ~info:(Info.make ~author:"client" "%s" message)
       l ["vals"] tree
 
     >>= fun res -> (match res with
@@ -308,7 +296,7 @@ module Make
     | Interface.Unit -> []
     | Interface.Param (typ, p, ps) -> ((Type.Boxed.box typ p)::flatten_params(ps))
 
-  let generate_task_queue: type a. a Operation.Unboxed.t -> a params -> t -> (value, queue) contents Lwt.t = fun operation params map ->
+  let generate_task_queue: type a. a Operation.Unboxed.t -> a params -> t -> value contents Lwt.t = fun operation params map ->
     let open Task_queue in
     let name = Operation.Unboxed.name operation in
     let param_list = flatten_params params in
@@ -320,7 +308,7 @@ module Make
     >|= fun () -> Task_queue (ops, []) (* Initially there are no pending operations *)
 
   let set_task_queue q m =
-    Store.set ~info:(Irmin_unix.info ~author:"map" "Specify workload")
+    Store.set ~info:(Info.make ~author:"map" "Specify workload")
       m ["task_queue"] q
 
     >>= fun res -> match res with
@@ -347,7 +335,7 @@ module Make
     (* Create a new branch to isolate the operation *)
     >>= fun () -> Store.clone ~src:l ~dst:map_name
     >>= fun branch -> Store.merge_with_branch l
-      ~info:(Irmin_unix.info ~author:"map" "Merged") Store.Branch.master
+      ~info:(Info.make ~author:"map" "Merged") Store.Branch.master
     >>= Misc.handle_merge_conflict Store.Branch.master map_name
 
     (* Generate and commit the task queue *)
@@ -376,12 +364,12 @@ module Make
         >>= fun job -> (match job with
             | Some j when String.equal map_name (JobQueue.Impl.job_to_string j) ->
 
-              Logs_lwt.debug (fun m -> m "Resetting count due to activity on branch %s" br_name)
+              Logs_lwt.warn (fun m -> m "Resetting count due to activity on branch %s" br_name)
               >|= (fun () -> inactivity_count := 0.0; sleep_interval := !sleep_interval /. 2.)
 
               (* Merge the work from this branch *)
               >>= fun () -> Store.merge_with_branch branch
-                ~info:(Irmin_unix.info ~author:"map" "Merged work from %s into %s" br_name map_name) br_name
+                ~info:(Info.make ~author:"map" "Merged work from %s into %s" br_name map_name) br_name
 
               >>= Misc.handle_merge_conflict br_name map_name
 
@@ -398,7 +386,8 @@ module Make
 
     Store.Branch.watch_all (Store.repo l) watch_callback
 
-    >>= fun watch -> Logs_lwt.app (fun m -> m "Waiting for the task queue to be empty, with timeout %f" timeout)
+    >>= fun watch -> Logs_lwt.app
+      (fun m -> m "Waiting for the task queue to be empty, with timeout %f" timeout)
     >>= fun () ->
 
     let rec inner () =
@@ -415,7 +404,7 @@ module Make
         task_queue_size branch
         >>= fun tq_size -> Logs_lwt.app (fun m -> m "Sleeping for a time of %f, with an inactivity count of %f. %d tasks remaining"
                                             !sleep_interval !inactivity_count tq_size)
-        >>= fun () -> Lwt_unix.sleep (!sleep_interval)
+        >>= fun () -> Store.sleep (!sleep_interval)
         >|= (fun () ->
             inactivity_count := !inactivity_count +. !sleep_interval;
             sleep_interval := !sleep_interval *. 2.)
@@ -427,7 +416,7 @@ module Make
 
     (* Merge the map branch into master *)
     >>= fun () -> Store.merge_with_branch l
-      ~info:(Irmin_unix.info ~author: "map" "Job %s complete" map_name) map_name
+      ~info:(Info.make ~author: "map" "Job %s complete" map_name) map_name
     >>= Misc.handle_merge_conflict map_name Store.Branch.master
 
     (* Remove the job from the job queue *)
@@ -442,5 +431,6 @@ module Make
       >>= (fun _ -> Logs_lwt.app @@ fun m -> m "Map operation complete. Branch name %s" map_name)
       >|= fun () -> m
 
-  let () = Irmin_unix.set_listen_dir_hook ()
+  let () =
+    Store.initialise ()
 end

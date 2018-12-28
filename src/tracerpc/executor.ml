@@ -11,8 +11,9 @@ module Make(I: Interface.IMPL_MAKER): S with module I = I = struct
   type value = I.S.t
 
   let initialise ?src ~thread_count =
-    let log = fun s -> (Logs.warn ?src (fun m -> m "%s" s)) in
-    Lwt_preemptive.init thread_count thread_count log
+    (* let log = fun s -> (Logs.warn ?src (fun m -> m "%s" s)) in *)
+    (* XXX: Lwt_preemptive.init thread_count thread_count log *)
+    ()
 
   (* We have a function of type (param -> ... -> param -> val -> val).
      Here we take the parameters that were passed as part of the RPC and recursively apply them
@@ -49,6 +50,6 @@ module Make(I: Interface.IMPL_MAKER): S with module I = I = struct
   let execute_task ?src boxed_mi params old_value =
     let func = fun () -> pass_params ?src boxed_mi params old_value in
 
-    (* Lwt.return (func ()) *)
-    Lwt_preemptive.detach func ()
+    Lwt.return (func ())
+    (* XXX: Lwt_preemptive.detach func () *)
   end

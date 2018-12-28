@@ -1,17 +1,19 @@
 (library
-	(name trace_rpc)
-	(public_name trace_rpc)
-	(flags (-thread))
-	(preprocess (pps ppx_deriving.std))
-	(libraries
-		alcotest
-		digestif.c
-		cmdliner
-		fmt.cli
-		fmt.tty
-		irmin
-    irmin-unix
-		logs.cli
-		logs.fmt
-		lwt
-		ocamlgraph))
+  (name trace_rpc)
+  (public_name trace_rpc)
+  (flags (-thread))
+  (preprocess (pps ppx_deriving.std))
+  (libraries
+    alcotest
+    digestif.c
+    cmdliner
+    checkseum.c
+    fmt.cli
+    fmt.tty
+    irmin
+    irmin-git
+    logs.cli
+    logs.fmt
+    logs.lwt
+    lwt
+    ocamlgraph))

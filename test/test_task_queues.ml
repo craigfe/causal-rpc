@@ -1,6 +1,9 @@
 open Lwt.Infix
 open Trace_rpc
-open Trace_rpc.Task_queue
+open Task_queue
+open Intmap
+
+module IntMap = Trace_rpc.Intmap.IntMap(Trace_rpc_unix.Info)(Irmin_unix.Git.FS.G)(Trace_rpc_unix.Make)
 
 type conflict = [
   | `Conflict of string
@@ -121,7 +124,6 @@ let test_merge _ () =
   merge_check ~old ~a ~b ~res "Multiple tasks consumed/performed on both branches"
 
 let test_map _ () =
-  let open Intmap in
   let root = "/tmp/irmin/task_queues/" in
 
   IntMap.empty ~directory:(root ^ "test-0001") ()
