@@ -69,14 +69,12 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
     if String.sub uri 0 7 = "file://" then
       let dir = String.sub uri 7 (String.length uri - 7) in
-      let lwt =
-        Irmin_git.config dir
-        |> Store.Repo.v
-        >>= fun repo -> Store.of_branch repo branch
-        >|= Irmin.remote_store (module Store)
-      in Lwt_main.run lwt
+      Irmin_git.config dir
+      |> Store.Repo.v
+      >>= fun repo -> Store.of_branch repo branch
+      >|= Irmin.remote_store (module Store)
     else
-      Store.remote_of_uri uri
+      Lwt.return (Store.remote_of_uri uri)
 
   let directory_from_name ?src name =
     let dir = "/tmp/irmin/" ^ name in
@@ -174,13 +172,15 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     (* Checkout the branch *)
     let map_name = JobQueue.Impl.job_to_string job in
     let work_br_name = worker_name in
-    let input_remote = upstream client map_name in
-    let output_remote = upstream client work_br_name in
 
     let pp_task = Fmt.of_to_string (fun (t:Task_queue.task) -> Fmt.strf "<%s> on key %s" t.name t.key) in
     let pp_commit = Fmt.of_to_string (fun (t:Task_queue.task list) -> match t with
         | _::_::_ -> Fmt.strf "Perform [%a]" (Fmt.list ~sep:Fmt.comma pp_task) t
         | _       -> Fmt.strf "Perform %a"   (Fmt.list ~sep:Fmt.comma pp_task) t) in
+
+    upstream client map_name
+    >>= fun input_remote -> upstream client work_br_name
+    >>= fun output_remote ->
 
     Store.Branch.remove repo work_br_name (* We may have used this worker branch earlier. Delete it here to avoid problems *)
     >>= fun () -> Store.of_branch repo map_name
@@ -279,7 +279,6 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
       | None -> directory_from_name ?src name in
 
     let config = Irmin_git.config ~bare:false dir in
-    let upstr = upstream client "master" in
 
     if String.sub dir 0 11 <> "/tmp/irmin/"
     then invalid_arg ("Supplied directory (" ^ dir ^ ") must be in /tmp/irmin/");
@@ -295,7 +294,8 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     >>= fun () -> Store.Repo.v config
     >>= fun s -> Store.master s
 
-    >>= fun master ->
+    >>= fun master -> upstream client "master"
+    >>= fun upstr ->
 
     let rec inner () =
 
