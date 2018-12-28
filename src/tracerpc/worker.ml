@@ -76,7 +76,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
         >|= Irmin.remote_store (module Store)
       in Lwt_main.run lwt
     else
-      Store.remote uri
+      Store.remote_of_uri uri
 
   let directory_from_name ?src name =
     let dir = "/tmp/irmin/" ^ name in
