@@ -1,0 +1,18 @@
+opam-version: "1.2"
+maintainer: "cf443@cam.ac.uk"
+authors: ["Craig Ferguson"]
+homepage: "https://github.com/craigfe/trace-rpc"
+bug-reports: "https://github.com/craigfe/trace-rpc/issues"
+dev-repo: "https://github.com/craigfe/trace-rpc.git"
+
+build: [
+  ["dune" "subst"] {pinned}
+  ["dune" "build" "-p" name "-j" jobs]
+]
+
+build-test: ["dune" "runtest" "-p" name]
+
+depends: [
+  "dune" {build}
+  "alcotest" {test}
+]
