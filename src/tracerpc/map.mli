@@ -4,31 +4,16 @@ exception Empty_queue
 (** A task is an operation, a list of parameters and a key specifying the value
     on which to perform the operation *)
 
-type ('v, 'jq) contents =
+type job = string
+type job_queue = job list
+
+type 'v contents =
   | Value of 'v
   | Task_queue of Task_queue.t
-  | Job_queue of 'jq
-
-module type QUEUE_TYPE = sig
-  type t
-  type job
-
-  val t: t Irmin.Type.t
-  val job: job Irmin.Type.t
-end
+  | Job_queue of job_queue
 
 module type JOB_QUEUE = sig
-  type t
-  (** The type of job queues *)
-
-  type job
-  (** The type of jobs *)
-
   module Store: Irmin.KV
-
-  module Type: QUEUE_TYPE
-    with type t = t
-     and type job = job
 
   module type IMPL = sig
     val job_of_string: string -> job
@@ -44,8 +29,8 @@ module type JOB_QUEUE = sig
   module Impl: IMPL
 end
 
-module MakeContents (Val: Irmin.Contents.S) (JQueue: QUEUE_TYPE): Irmin.Contents.S
-  with type t = (Val.t, JQueue.t) contents
+module MakeContents (Val: Irmin.Contents.S): Irmin.Contents.S
+  with type t = Val.t contents
 
 exception Malformed_params of string
 exception Protocol_error of string
@@ -57,13 +42,10 @@ module type S = sig
   type key = string
   (** The type of the map keys *)
 
-  type queue
-  (** The type of the job queue *)
-
   type t
   (** The type of maps from type [key] to type [value] *)
 
-  module Contents: Irmin.Contents.S with type t = (Value.t, queue) contents
+  module Contents: Irmin.Contents.S with type t = Value.t contents
 
   module Store: Store.S
     with type key = string list
@@ -81,7 +63,7 @@ module type S = sig
   exception Store_error of Store.write_error
 
   (* -- TESTING PURPOSES --------------------------------- *)
-  val generate_task_queue: 'a Operation.Unboxed.t -> 'a params -> t -> (Value.t, queue) contents Lwt.t
+  val generate_task_queue: 'a Operation.Unboxed.t -> 'a params -> t -> Value.t contents Lwt.t
   (* ----------------------------------------------------- *)
 
   val of_store: Sync.db -> t
@@ -138,19 +120,17 @@ end
 module Make
     (GitBackend: Irmin_git.G)
     (Desc: Interface.DESC)
-    (QueueType: QUEUE_TYPE)
     (JQueueMake: functor
        (Val: Irmin.Contents.S)
        (St: Store.S
         with type key = Irmin.Path.String_list.t
          and type step = string
          and module Key = Irmin.Path.String_list
-         and type contents = (Val.t, QueueType.t) contents
+         and type contents = Val.t contents
          and type branch = string)
        -> (JOB_QUEUE with module Store = St)): S
   with module Value = Desc.Val
    and module Operation = Interface.MakeOperation(Desc.Val)
-   and type queue = QueueType.t
 (** Functor building an implementation of the map structure given:
      - a value for the map to contain
      - a set of operations on that type

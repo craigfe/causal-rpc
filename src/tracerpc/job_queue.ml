@@ -3,21 +3,13 @@ open Map
 
 exception Empty_queue
 
-module Type = struct
-  type t = string list
-  type job = string
-
-  let t = Irmin.Type.list Irmin.Type.string
-  let job = Irmin.Type.string
-end
-
 module Make
     (Val: Irmin.Contents.S)
     (St: Store.S
         with type key = Irmin.Path.String_list.t
          and type step = string
          and module Key = Irmin.Path.String_list
-         and type contents = (Val.t, Type.t) Map.contents
+         and type contents = Val.t Map.contents
          and type branch = string)
 
   : Map.JOB_QUEUE with module Store = St = struct
@@ -25,7 +17,6 @@ module Make
   type t = string list
   type job = string
 
-  module Type = Type
   module Store = St
 
   module type IMPL = sig

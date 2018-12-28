@@ -64,7 +64,6 @@ end
 module IntMap = Map.Make
     (Irmin_unix.Git.Mem.G)
     (Definition)
-    (Job_queue.Type)
     (Job_queue.Make)
 
 module IntWorker = Worker.Make(IntMap)(Implementation)

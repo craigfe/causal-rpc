@@ -2,31 +2,19 @@ open Lwt.Infix
 
 exception Empty_queue
 
-type ('v, 'jq) contents =
+type job = string
+type job_queue = job list
+
+let job = Irmin.Type.string
+let job_queue = Irmin.Type.list job
+
+type 'v contents =
   | Value of 'v
   | Task_queue of Task_queue.t
-  | Job_queue of 'jq
-
-module type QUEUE_TYPE = sig
-  type t
-  type job
-
-  val t: t Irmin.Type.t
-  val job: job Irmin.Type.t
-end
+  | Job_queue of job_queue
 
 module type JOB_QUEUE = sig
-  type t
-  (** The type of job queues *)
-
-  type job
-  (** The type of jobs *)
-
   module Store: Irmin.KV
-
-  module Type: QUEUE_TYPE
-    with type t = t
-     and type job = job
 
   module type IMPL = sig
     val job_of_string: string -> job
@@ -42,10 +30,10 @@ module type JOB_QUEUE = sig
   module Impl: IMPL
 end
 
-module MakeContents (Val: Irmin.Contents.S) (JQueueType: QUEUE_TYPE): Irmin.Contents.S
-  with type t = (Val.t, JQueueType.t) contents = struct
+module MakeContents (Val: Irmin.Contents.S): Irmin.Contents.S
+  with type t = Val.t contents = struct
 
-  type t = (Val.t, JQueueType.t) contents
+  type t = Val.t contents
 
   let t =
     let open Irmin.Type in
@@ -55,7 +43,7 @@ module MakeContents (Val: Irmin.Contents.S) (JQueueType: QUEUE_TYPE): Irmin.Cont
         | Job_queue js -> branch_name js)
     |~ case1 "Value" Val.t (fun v -> Value v)
     |~ case1 "Task_queue" Task_queue.t (fun q -> Task_queue q)
-    |~ case1 "Job_queue" JQueueType.t (fun js -> Job_queue js)
+    |~ case1 "Job_queue" job_queue (fun js -> Job_queue js)
     |> sealv
 
   let merge ~old t1 t2 =
@@ -95,11 +83,10 @@ module type S = sig
   module Value: Irmin.Contents.S
 
   type key = string
-  type queue
 
   type t
 
-  module Contents: Irmin.Contents.S with type t = (Value.t, queue) contents
+  module Contents: Irmin.Contents.S with type t = Value.t contents
   module Store: Store.S
     with type key = Irmin.Path.String_list.t
      and type step = string
@@ -116,7 +103,7 @@ module type S = sig
   type 'a params = 'a Interface.MakeOperation(Value).params
 
   (* Here for testing purposes *)
-  val generate_task_queue: 'a Operation.Unboxed.t -> 'a params -> t -> (Value.t, queue) contents Lwt.t
+  val generate_task_queue: 'a Operation.Unboxed.t -> 'a params -> t -> Value.t contents Lwt.t
   (* ------------------------- *)
 
   val of_store: Sync.db -> t
@@ -138,24 +125,21 @@ end
 module Make
     (GitBackend: Irmin_git.G)
     (Desc: Interface.DESC)
-    (QueueType: QUEUE_TYPE)
     (JQueueMake: functor
        (Val: Irmin.Contents.S)
        (St: Store.S
         with type key = Irmin.Path.String_list.t
          and type step = string
          and module Key = Irmin.Path.String_list
-         and type contents = (Val.t, QueueType.t) contents
+         and type contents = Val.t contents
          and type branch = string)
        -> (JOB_QUEUE with module Store = St)
     ): S
   with module Value = Desc.Val
-   and module Operation = Interface.MakeOperation(Desc.Val)
-   and type queue = QueueType.t = struct
-
+   and module Operation = Interface.MakeOperation(Desc.Val) = struct
 
   module Value = Desc.Val
-  module Contents = MakeContents(Desc.Val)(QueueType)
+  module Contents = MakeContents(Desc.Val)
   module Store = Store.Make(GitBackend)(Contents)
   module Sync = Irmin.Sync(Store)
   module JobQueue = JQueueMake(Desc.Val)(Store)
@@ -163,7 +147,6 @@ module Make
 
   type key = string
   type value = Value.t
-  type queue = QueueType.t
   type 'a params = 'a Operation.params
 
   type t = {
@@ -308,7 +291,7 @@ module Make
     | Interface.Unit -> []
     | Interface.Param (typ, p, ps) -> ((Type.Boxed.box typ p)::flatten_params(ps))
 
-  let generate_task_queue: type a. a Operation.Unboxed.t -> a params -> t -> (value, queue) contents Lwt.t = fun operation params map ->
+  let generate_task_queue: type a. a Operation.Unboxed.t -> a params -> t -> value contents Lwt.t = fun operation params map ->
     let open Task_queue in
     let name = Operation.Unboxed.name operation in
     let param_list = flatten_params params in
