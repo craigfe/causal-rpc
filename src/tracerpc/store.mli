@@ -3,8 +3,11 @@ module type S = sig
   val remote_of_uri: string -> Irmin.remote
 end
 
-module Make(GitImpl: Irmin_git.G)(Contents: Irmin.Contents.S): S
-  with type key = string list
+module type BACKEND = functor
+  (GitImpl: Irmin_git.G) (Contents: Irmin.Contents.S) -> S
+  with type contents = Contents.t
    and type step = string
-   and type contents = Contents.t
    and type branch = string
+   and type key = Irmin.Path.String_list.t
+
+module Make: BACKEND
