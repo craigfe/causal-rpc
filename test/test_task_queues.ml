@@ -1,6 +1,10 @@
 open Lwt.Infix
 open Trace_rpc
 open Trace_rpc.Task_queue
+open Intmap
+
+module I = IntPair (Trace_rpc_unix.Make)(Irmin_unix.Git.Mem.G)
+open I
 
 type conflict = [
   | `Conflict of string
@@ -121,12 +125,11 @@ let test_merge _ () =
   merge_check ~old ~a ~b ~res "Multiple tasks consumed/performed on both branches"
 
 let test_map _ () =
-  let open Intmap in
   let root = "/tmp/irmin/task_queues/" in
 
   IntMap.empty ~directory:(root ^ "test-0001") ()
   >>= IntMap.add "a" Int64.one
-  >>= IntMap.generate_task_queue increment_op Interface.Unit (* TODO: It shouldn't be necessary to pass the empty list here *)
+  >>= IntMap.generate_task_queue Intmap.increment_op Interface.Unit (* TODO: It shouldn't be necessary to pass the empty list here *)
 
   >|= (fun c -> match c with
       | Task_queue (s, []) ->

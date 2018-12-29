@@ -1,1 +1,1 @@
-module Make: Trace_rpc.Store.BACKEND
+module Make: Trace_rpc.Backend.MAKER

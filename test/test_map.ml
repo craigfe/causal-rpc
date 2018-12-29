@@ -1,9 +1,12 @@
 open Lwt.Infix
 open Trace_rpc
+open Intmap
+
+module I = IntPair (Trace_rpc_unix.Make)(Irmin_unix.Git.FS.G)
+open I
 
 (** Tests on the IntMap datastructure *)
 let test _ () =
-  let open Intmap in
   let root = "/tmp/irmin/map/" in
 
   IntMap.empty ~directory:(root ^ "test-0001") ()

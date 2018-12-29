@@ -87,7 +87,8 @@ module type S = sig
   type t
 
   module Contents: Irmin.Contents.S with type t = Value.t contents
-  module Store: Store.S
+  module B: Backend.S
+  module Store: Irmin_git.S
     with type key = Irmin.Path.String_list.t
      and type step = string
      and module Key = Irmin.Path.String_list
@@ -123,26 +124,28 @@ module type S = sig
 end
 
 module Make
+    (BackendMaker: Backend.MAKER)
     (GitBackend: Irmin_git.G)
     (Desc: Interface.DESC)
     (JQueueMake: functor
        (Val: Irmin.Contents.S)
-       (St: Store.S
-        with type key = Irmin.Path.String_list.t
-         and type step = string
-         and module Key = Irmin.Path.String_list
-         and type contents = Val.t contents
-         and type branch = string)
-       -> (JOB_QUEUE with module Store = St)
+       (B: Backend.S
+        with type Store.key = Irmin.Path.String_list.t
+         and type Store.step = string
+         and module Store.Key = Irmin.Path.String_list
+         and type Store.contents = Val.t contents
+         and type Store.branch = string)
+       -> (JOB_QUEUE with module Store = B.Store)
     ): S
   with module Value = Desc.Val
    and module Operation = Interface.MakeOperation(Desc.Val) = struct
 
   module Value = Desc.Val
   module Contents = MakeContents(Desc.Val)
-  module Store = Store.Make(GitBackend)(Contents)
+  module B = BackendMaker(GitBackend)(Contents)
+  module Store = B.Store
   module Sync = Irmin.Sync(Store)
-  module JobQueue = JQueueMake(Desc.Val)(Store)
+  module JobQueue = JQueueMake(Desc.Val)(B)
   module Operation = Interface.MakeOperation(Desc.Val)
 
   type key = string
@@ -160,7 +163,7 @@ module Make
 
   let generate_random_directory () =
     Misc.generate_rand_string ~length:20 ()
-    |> Pervasives.(^) "/tmp/irmin/set/"
+    |> Pervasives.(^) "/tmp/irmin/map/"
     |> fun x -> Logs.info (fun m -> m "No directory supplied. Generated random directory %s" x); x
 
   let empty ?(directory=generate_random_directory()) ?remote_uri () =
@@ -172,6 +175,7 @@ module Make
     (* Delete the directory if it already exists... Unsafe! *)
     let ret_code = Sys.command ("rm -rf " ^ directory) in
     if (ret_code <> 0) then invalid_arg "Unable to delete directory";
+
 
     Store.Repo.v config
     >>= Store.master
@@ -194,7 +198,7 @@ module Make
 
     Store.set
       ~allow_empty:true
-      ~info:(Irmin_unix.info ~author:"client" "%s" message)
+      ~info:(B.make_info ~author:"client" "%s" message)
       l
       ["vals"; key]
       (Value value)
@@ -228,7 +232,7 @@ module Make
 
     >>= fun tree -> Store.set_tree
       ~allow_empty:true
-      ~info:(Irmin_unix.info ~author:"client" "%s" message)
+      ~info:(B.make_info ~author:"client" "%s" message)
       l ["vals"] tree
 
     >>= fun res -> (match res with
@@ -303,7 +307,7 @@ module Make
     >|= fun () -> Task_queue (ops, []) (* Initially there are no pending operations *)
 
   let set_task_queue q m =
-    Store.set ~info:(Irmin_unix.info ~author:"map" "Specify workload")
+    Store.set ~info:(B.make_info ~author:"map" "Specify workload")
       m ["task_queue"] q
 
     >>= fun res -> match res with
@@ -330,7 +334,7 @@ module Make
     (* Create a new branch to isolate the operation *)
     >>= fun () -> Store.clone ~src:l ~dst:map_name
     >>= fun branch -> Store.merge_with_branch l
-      ~info:(Irmin_unix.info ~author:"map" "Merged") Store.Branch.master
+      ~info:(B.make_info ~author:"map" "Merged") Store.Branch.master
     >>= Misc.handle_merge_conflict Store.Branch.master map_name
 
     (* Generate and commit the task queue *)
@@ -364,7 +368,7 @@ module Make
 
               (* Merge the work from this branch *)
               >>= fun () -> Store.merge_with_branch branch
-                ~info:(Irmin_unix.info ~author:"map" "Merged work from %s into %s" br_name map_name) br_name
+                ~info:(B.make_info ~author:"map" "Merged work from %s into %s" br_name map_name) br_name
 
               >>= Misc.handle_merge_conflict br_name map_name
 
@@ -398,7 +402,7 @@ module Make
         task_queue_size branch
         >>= fun tq_size -> Logs_lwt.app (fun m -> m "Sleeping for a time of %f, with an inactivity count of %f. %d tasks remaining"
                                             !sleep_interval !inactivity_count tq_size)
-        >>= fun () -> Lwt_unix.sleep (!sleep_interval)
+        >>= fun () -> B.sleep (!sleep_interval)
         >|= (fun () ->
             inactivity_count := !inactivity_count +. !sleep_interval;
             sleep_interval := !sleep_interval *. 2.)
@@ -410,7 +414,7 @@ module Make
 
     (* Merge the map branch into master *)
     >>= fun () -> Store.merge_with_branch l
-      ~info:(Irmin_unix.info ~author: "map" "Job %s complete" map_name) map_name
+      ~info:(B.make_info ~author: "map" "Job %s complete" map_name) map_name
     >>= Misc.handle_merge_conflict map_name Store.Branch.master
 
     (* Remove the job from the job queue *)
@@ -425,5 +429,5 @@ module Make
       >>= (fun _ -> Logs_lwt.app @@ fun m -> m "Map operation complete. Branch name %s" map_name)
       >|= fun () -> m
 
-  let () = Irmin_unix.set_listen_dir_hook ()
+  let () = B.initialise (); (* XXX *)
 end

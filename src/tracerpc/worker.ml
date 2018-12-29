@@ -51,9 +51,11 @@ module type W = sig
     client:string -> unit -> unit Lwt.t
 end
 
-module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = struct
-  include M
+module Make
+    (M: Map.S)
+    (Impl: Interface.IMPL with module Val = M.Value): W = struct
 
+  include M
   module C = Config
   module I = Interface.MakeImplementation(Impl.Val)
   module E = Executor.Make(I)
@@ -74,7 +76,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
       >>= fun repo -> Store.of_branch repo branch
       >|= Irmin.remote_store (module Store)
     else
-      Lwt.return (Store.remote_of_uri uri)
+      Lwt.return (B.remote_of_uri uri)
 
   let directory_from_name ?src name =
     let dir = "/tmp/irmin/" ^ name in
@@ -109,7 +111,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
           | _::_::_ -> Fmt.strf "Consume [%a]" (Fmt.list ~sep:Fmt.comma pp_task) t
           | _       -> Fmt.strf "Consume %a"   (Fmt.list ~sep:Fmt.comma pp_task) t) in
 
-      Store.set working_br ~info:(Irmin_unix.info ~author:worker_name "%a" pp_commit selected)
+      Store.set working_br ~info:(B.make_info ~author:worker_name "%a" pp_commit selected)
         ["task_queue"] (Task_queue (remaining, selected @ pending))
 
       >>= fun res -> (match res with
@@ -193,11 +195,11 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
     >>= fun working_br ->
 
     let rec task_exection_loop () =
-      let info = Irmin_unix.info ~author:"worker_ERROR" "This should always be a fast-forward" in
+      let info = B.make_info ~author:"worker_ERROR" "This should always be a fast-forward" in
 
       Sync.pull_exn local_br input_remote (`Merge info)
       >>= fun () -> Store.merge_with_branch working_br
-        ~info:(Irmin_unix.info ~author:worker_name "Updating world-view on %s" map_name)
+        ~info:(B.make_info ~author:worker_name "Updating world-view on %s" map_name)
         map_name
       >>= Misc.handle_merge_conflict work_br_name map_name
 
@@ -238,7 +240,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
           (* Now perform the commit and push to the remote. This commit should never be empty. But for
              debugging purposes we show empty commits *)
           >>= fun result_tree -> Store.set_tree ~allow_empty:true
-            ~info:(Irmin_unix.info ~author:worker_name "%a" pp_commit ts)
+            ~info:(B.make_info ~author:worker_name "%a" pp_commit ts)
             working_br [] result_tree
 
           >>= fun res -> (match res with
@@ -251,7 +253,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
               | Error pe -> Lwt.fail @@ Push_error pe)
 
           >>= fun () -> Logs_lwt.info ?src @@ fun m -> m "Changes pushed to branch %s" map_name
-          >>= Lwt_main.yield
+          >>= B.yield
           >>= task_exection_loop
         end
     in task_exection_loop ()
@@ -305,7 +307,7 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
        | None -> Lwt.return_unit)
 
       (* Pull and check the map_request file for queued jobs *)
-      >>= fun () -> Sync.pull_exn master upstr (`Merge (Irmin_unix.info ~author:"worker_ERROR" "This should always be a fast-forward"))
+      >>= fun () -> Sync.pull_exn master upstr (`Merge (B.make_info ~author:"worker_ERROR" "This should always be a fast-forward"))
       >>= fun () -> JobQueue.Impl.peek_opt master
       >>= fun j -> (match j with
 
@@ -320,9 +322,9 @@ module Make (M : Map.S) (Impl: Interface.IMPL with module Val = M.Value): W = st
 
           | None ->
             Logs_lwt.info ?src (fun m -> m "Found no map request. Sleeping for %f seconds." poll_freq)
-            >>= fun () -> Lwt_unix.sleep poll_freq)
+            >>= fun () -> B.sleep poll_freq)
 
-      >>= Lwt_main.yield
+      >>= B.yield
       >>= inner
 
     in inner ()

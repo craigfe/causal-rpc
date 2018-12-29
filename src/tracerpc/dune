@@ -6,12 +6,14 @@
 	(libraries
 		alcotest
 		digestif.c
+    checkseum.c
 		cmdliner
 		fmt.cli
 		fmt.tty
 		irmin
-    irmin-unix
+    irmin-git
 		logs.cli
 		logs.fmt
+    logs.lwt
 		lwt
 		ocamlgraph))

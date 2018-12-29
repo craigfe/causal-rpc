@@ -6,4 +6,5 @@
     cohttp-lwt-unix
     digestif
 		trace_rpc
+    trace_rpc_unix
     yojson))

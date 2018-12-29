@@ -2,6 +2,9 @@ open Lwt.Infix
 open Trace_rpc
 open Intmap
 
+module I = IntPair (Trace_rpc_unix.Make)(Irmin_unix.Git.Mem.G)
+open I
+
 let worker ?batch_size switch dir = IntWorker.run
     ~switch
     ~config:(Worker.Config.make

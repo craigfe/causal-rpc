@@ -5,19 +5,19 @@ exception Empty_queue
 
 module Make
     (Val: Irmin.Contents.S)
-    (St: Store.S
-        with type key = Irmin.Path.String_list.t
-         and type step = string
-         and module Key = Irmin.Path.String_list
-         and type contents = Val.t Map.contents
-         and type branch = string)
+    (B: Backend.S
+        with type Store.key = Irmin.Path.String_list.t
+         and type Store.step = string
+         and module Store.Key = Irmin.Path.String_list
+         and type Store.contents = Val.t Map.contents
+         and type Store.branch = string)
 
-  : Map.JOB_QUEUE with module Store = St = struct
+  : Map.JOB_QUEUE with module Store = B.Store = struct
 
   type t = string list
   type job = string
 
-  module Store = St
+  module Store = B.Store
 
   module type IMPL = sig
     val job_of_string: string -> job
@@ -50,7 +50,7 @@ module Make
     let push j m = (* TODO: make this atomic *)
       of_map m
       >>= fun js -> Store.set m
-        ~info:(Irmin_unix.info ~author:"map" "Add %s to job queue" j)
+        ~info:(B.make_info ~author:"map" "Add %s to job queue" j)
         ["job_queue"]
         (Job_queue (j::js))
       >|= fun res -> match res with
@@ -63,7 +63,7 @@ module Make
       >>= fun js -> match js with
       | (j::js) ->
         Store.set m
-          ~info:(Irmin_unix.info ~author:"map" "Remove %s from job queue" j)
+          ~info:(B.make_info ~author:"map" "Remove %s from job queue" j)
           ["job_queue"]
           (Job_queue js)
         >|= fun res -> (match res with

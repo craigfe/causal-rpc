@@ -46,8 +46,8 @@ module type S = sig
   (** The type of maps from type [key] to type [value] *)
 
   module Contents: Irmin.Contents.S with type t = Value.t contents
-
-  module Store: Store.S
+  module B: Backend.S
+  module Store: Irmin_git.S
     with type key = string list
      and type step = string
      and type contents = Contents.t
@@ -118,17 +118,18 @@ module type S = sig
 end
 
 module Make
+    (BackendMaker: Backend.MAKER)
     (GitBackend: Irmin_git.G)
     (Desc: Interface.DESC)
     (JQueueMake: functor
        (Val: Irmin.Contents.S)
-       (St: Store.S
-        with type key = Irmin.Path.String_list.t
-         and type step = string
-         and module Key = Irmin.Path.String_list
-         and type contents = Val.t contents
-         and type branch = string)
-       -> (JOB_QUEUE with module Store = St)): S
+       (B: Backend.S
+        with type Store.key = Irmin.Path.String_list.t
+         and type Store.step = string
+         and module Store.Key = Irmin.Path.String_list
+         and type Store.contents = Val.t contents
+         and type Store.branch = string)
+       -> (JOB_QUEUE with module Store = B.Store)): S
   with module Value = Desc.Val
    and module Operation = Interface.MakeOperation(Desc.Val)
 (** Functor building an implementation of the map structure given:
