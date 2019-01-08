@@ -1,0 +1,5 @@
+(executable
+  (name main)
+  (public_name mwe)
+  (package     trace-rpc-unix)
+  (libraries   trace-rpc trace-rpc-unix lwt.unix))

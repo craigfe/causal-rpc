@@ -1,4 +1,4 @@
-module Make (C: Mirage_clock.PCLOCK) (GitImpl: Irmin_git.G) (Contents: Irmin.Contents.S): Trace_rpc.Backend.S
+module Make (GitImpl: Irmin_git.G) (Contents: Irmin.Contents.S): Trace_rpc.Backend.S
   with type Store.contents = Contents.t
    and type Store.branch = string
    and type Store.step = string
