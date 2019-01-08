@@ -315,7 +315,8 @@ module Make
       (* Pull and check the map_request file for queued jobs *)
       >>= fun () -> Sync.pull_exn master upstr (`Merge (B.make_info ~author:"worker_ERROR" "This should always be a fast-forward"))
       >>= fun () -> JobQueue.Impl.peek_opt master
-      >>= fun j -> Logs_lwt.info (fun m -> m "%a" (Fmt.list Fmt.string) (SS.elements !seen_before))
+      >>= fun j -> Logs_lwt.debug (fun m -> m "Branches seen before: %a"
+                                      (Fmt.brackets @@ Fmt.list ~sep:Fmt.comma Fmt.string) (SS.elements !seen_before))
       >>= fun () -> (match j with
 
           (* A map request has been issued *)
