@@ -1,5 +1,5 @@
 
-module IntPair = Trace_rpc.Intmap.IntPair (Make) (Irmin_mirage.Git.FS.G)
+(* module IntPair = Trace_rpc.Intmap.IntPair (Make) (Irmin_mirage.Git.FS.G) *)
 
 (* let implementation style_renderer level ?name ?dir client =
  *   Fmt_tty.setup_std_outputs ?style_renderer ();

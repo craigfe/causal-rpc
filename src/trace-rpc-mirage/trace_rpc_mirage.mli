@@ -1,1 +1,1 @@
-module Make: Trace_rpc.Backend.MAKER
+module Make (C: Mirage_clock.PCLOCK): Trace_rpc.Backend.MAKER
