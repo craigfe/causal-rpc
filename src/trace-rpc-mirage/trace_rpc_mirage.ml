@@ -24,6 +24,6 @@ module Make
 
   let remote_of_uri x = Store.remote ~conduit:Context.c ~resolver:Context.r x
   let sleep f = Duration.of_f f |> T.sleep_ns
-  let yield () = Lwt.return_unit (* Lwt_main.yield *)
-  let initialise = (fun () -> ()) (* Irmin_unix.set_listen_dir_hook *)
+  let yield () = T.sleep_ns Int64.zero
+  let initialise = (fun () -> ())
 end
