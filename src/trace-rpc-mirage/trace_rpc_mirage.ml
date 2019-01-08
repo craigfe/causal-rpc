@@ -1,4 +1,6 @@
-module Make (GitImpl: Irmin_git.G) (Contents: Irmin.Contents.S): Trace_rpc.Backend.S
+open Mirage_types_lwt
+
+module Make (T: TIME) (GitImpl: Irmin_git.G) (Contents: Irmin.Contents.S): Trace_rpc.Backend.S
   with type Store.contents = Contents.t
    and type Store.branch = string
    and type Store.step = string
@@ -18,7 +20,7 @@ module Make (GitImpl: Irmin_git.G) (Contents: Irmin.Contents.S): Trace_rpc.Backe
       ) fmt
 
   let remote_of_uri x = Store.remote x
-  let sleep _ = Lwt.return_unit (* OS.Time.sleep *)
+  let sleep f = Duration.of_f f |> T.sleep_ns
   let yield () = Lwt.return_unit (* Lwt_main.yield *)
   let initialise = (fun () -> ()) (* Irmin_unix.set_listen_dir_hook *)
 end
