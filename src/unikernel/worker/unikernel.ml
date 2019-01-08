@@ -2,13 +2,17 @@ open Lwt.Infix
 open Mirage_types_lwt
 open Trace_rpc
 
-module Main (T : TIME) (_: Resolver_lwt.S) (_: Conduit_mirage.S) = struct
+module Main (T : TIME) (P: PCLOCK) (_: Resolver_lwt.S) (_: Conduit_mirage.S) = struct
 
-  let start _time resolver conduit _ =
+  let start _time pclock resolver conduit _ =
     let client = Key_gen.client () in
 
-    let module Context = struct let r = resolver let c = conduit end in
-    let module I = Intmap.IntPair (Trace_rpc_mirage.Make(T)(Context)) (Irmin_git.Mem) in
+    let module Context = struct
+      let r = resolver
+      let c = conduit
+      let p = pclock
+    end in
+    let module I = Intmap.IntPair (Trace_rpc_mirage.Make(T)(P)(Context)) (Irmin_git.Mem) in
     let open I in
     let open Intmap in
 

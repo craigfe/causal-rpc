@@ -29,7 +29,8 @@ let main =
     ~keys:[Key.abstract key]
     ~packages
     "Unikernel.Main"
-    (time @-> resolver @-> conduit @-> job)
+    (time @-> pclock @-> resolver @-> conduit @-> job)
 
 let () =
-  register "tracerpc-worker" [main $ default_time $ resolver_dns net $ conduit_direct net]
+  register "tracerpc-worker" [main $ default_time $ default_posix_clock $
+                              resolver_dns net $ conduit_direct net]
