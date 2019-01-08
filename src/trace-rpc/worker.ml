@@ -292,6 +292,12 @@ module Make
     (* Initialise the task executor *)
     E.initialise ?src ~thread_count;
 
+    (* Store a set of the jobs we have completed before *)
+    (* TODO: prevent this from growing infinitely? *)
+    let module SS = Set.Make(String) in
+    let seen_before = ref SS.empty in
+    let job_to_string = JobQueue.Impl.job_to_string in
+
     Logs_lwt.app ?src (fun m -> m "Initialising worker with name %s for client %s" name client)
     >>= fun () -> Store.Repo.v config
     >>= fun s -> Store.master s
@@ -309,16 +315,18 @@ module Make
       (* Pull and check the map_request file for queued jobs *)
       >>= fun () -> Sync.pull_exn master upstr (`Merge (B.make_info ~author:"worker_ERROR" "This should always be a fast-forward"))
       >>= fun () -> JobQueue.Impl.peek_opt master
-      >>= fun j -> (match j with
+      >>= fun j -> Logs_lwt.info (fun m -> m "%a" (Fmt.list Fmt.string) (SS.elements !seen_before))
+      >>= fun () -> (match j with
 
           (* A map request has been issued *)
           | Some br_name ->
-
-            Logs_lwt.info ?src (fun m -> m "Detected a map request on branch %s"
-                                   (JobQueue.Impl.job_to_string br_name))
-            >>= fun () -> handle_request ~random_selection ~batch_size ~two_phase ?src s client br_name name
-            >>= fun () -> Logs_lwt.info ?src (fun m -> m "Finished handling request on branch %s"
-                                                 (JobQueue.Impl.job_to_string br_name))
+            if SS.mem (job_to_string br_name) !seen_before then
+              Logs_lwt.debug ?src (fun m -> m "Detected map request <%s>, but we have already seen this" (job_to_string br_name))
+            else
+              Logs_lwt.info ?src (fun m -> m "Detected a new map request on branch %s" (job_to_string br_name))
+              >>= fun () -> handle_request ~random_selection ~batch_size ~two_phase ?src s client br_name name
+              >|= (fun () -> seen_before := SS.add (job_to_string br_name) !seen_before)
+              >>= fun () -> Logs_lwt.info ?src (fun m -> m "Finished handling request on branch %s" (job_to_string br_name))
 
           | None ->
             Logs_lwt.info ?src (fun m -> m "Found no map request. Sleeping for %f seconds." poll_freq)
