@@ -1,4 +1,0 @@
-(library
-  (name        trace_rpc_mirage)
-  (public_name trace_rpc_mirage)
-  (libraries   trace_rpc))

@@ -1,0 +1,7 @@
+(library
+  (name        trace_rpc_mirage)
+  (public_name trace-rpc-mirage)
+  (libraries   
+  	trace-rpc
+    mirage
+    irmin-mirage))

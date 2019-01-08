@@ -11,7 +11,7 @@ module type OPERATION = sig
 
   module Unboxed: sig
     type 'a t
-
+ 
     val name: 'a t -> string
     val typ:  'a t -> (Val.t, 'a) func_type
   end

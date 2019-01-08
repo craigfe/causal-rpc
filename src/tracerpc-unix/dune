@@ -1,4 +1,0 @@
-(library
-  (name        trace_rpc_unix)
-  (public_name trace_rpc_unix)
-  (libraries   trace_rpc irmin-unix))
