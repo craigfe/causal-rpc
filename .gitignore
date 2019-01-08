@@ -5,3 +5,7 @@ _build
 _opam
 .#*
 **/#
+
+src/unikernel/worker/*
+!src/unikernel/worker/config.ml
+!src/unikernel/worker/unikernel.ml

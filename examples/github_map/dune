@@ -5,6 +5,6 @@
     alcotest-lwt
     cohttp-lwt-unix
     digestif
-		trace_rpc
-    trace_rpc_unix
+		trace-rpc
+    trace-rpc-unix
     yojson))
