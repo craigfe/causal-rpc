@@ -1,6 +1,9 @@
 open Mirage_types_lwt
 
-module Make (T: TIME) (GitImpl: Irmin_git.G) (Contents: Irmin.Contents.S): Trace_rpc.Backend.S
+module Make
+    (T: TIME)
+    (Context: sig val r: Resolver_lwt.t val c: Conduit_mirage.t end)
+    (GitImpl: Irmin_git.G) (Contents: Irmin.Contents.S): Trace_rpc.Backend.S
   with type Store.contents = Contents.t
    and type Store.branch = string
    and type Store.step = string
@@ -19,7 +22,7 @@ module Make (T: TIME) (GitImpl: Irmin_git.G) (Contents: Irmin.Contents.S): Trace
         Irmin.Info.v ~date ~author msg
       ) fmt
 
-  let remote_of_uri x = Store.remote x
+  let remote_of_uri x = Store.remote ~conduit:Context.c ~resolver:Context.r x
   let sleep f = Duration.of_f f |> T.sleep_ns
   let yield () = Lwt.return_unit (* Lwt_main.yield *)
   let initialise = (fun () -> ()) (* Irmin_unix.set_listen_dir_hook *)
