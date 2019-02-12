@@ -2,11 +2,16 @@ open Lwt.Infix
 open Trace_rpc
 open Intmap
 
+module I = IntPair (Trace_rpc_unix.Make)(Irmin_unix.Git.FS.G)
+open I
+
 let worker switch dir = IntWorker.run
     ~switch
+    ~config:(Worker.Config.make
+               ~poll_freq:0.01 ())
     ~dir:("/tmp/irmin/test_stress/worker/" ^ dir)
     ~client:("file:///tmp/irmin/test_stress/" ^ dir)
-    ~poll_freq:0.01 ()
+    ()
 
 let worker_pool switch n dir =
   let rec inner n dir =
@@ -14,12 +19,15 @@ let worker_pool switch n dir =
     | 0 -> []
     | n -> let w =
              IntWorker.run
-               ~random_selection:true
                ~switch
-               ~name:("worker_" ^ (string_of_int n))
+               ~config:(Worker.Config.make
+                          ~random_selection:true
+                          ~name:("worker_" ^ (string_of_int n))
+                          ~poll_freq:0.01 ()
+                       )
                ~dir:("/tmp/irmin/test_stress/worker/" ^ dir ^ "/worker_" ^ (string_of_int n))
                ~client:("file:///tmp/irmin/test_stress/" ^ dir)
-               ~poll_freq:0.01 ()
+               ()
       in w :: inner (n-1) dir
   in inner n dir
 
