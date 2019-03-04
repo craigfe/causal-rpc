@@ -17,7 +17,8 @@ module Definition = struct
   module D = Interface.Description(C)
   open D
 
-  let api = define [describe commit_count_op]
+  type shape = contents -> contents
+  let api = define commit_count_op
 end
 
 module Implementation: Interface.IMPL with type Val.t = contents = struct
@@ -25,7 +26,8 @@ module Implementation: Interface.IMPL with type Val.t = contents = struct
   module I = Interface.MakeImplementation(C)
   open I
 
-  let api = define [implement commit_count_op (fun (s, _) -> ("", Github.commit_count s))]
+  type shape = contents -> contents
+  let api = define (commit_count_op, (fun (s, _) -> ("", Github.commit_count s)))
 end
 
 module GithubMap = Map.Make(Trace_rpc_unix.Make)(Irmin_unix.Git.Mem.G)(Definition)(Job_queue.Make)

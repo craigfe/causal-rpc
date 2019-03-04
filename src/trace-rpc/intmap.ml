@@ -21,13 +21,13 @@ module Definition = struct
   module D = Interface.Description(Int)
   open D
 
-  let api = define [
-      describe identity_op;
-      describe increment_op;
-      describe sleep_op;
-      describe complex_op; (* Note: the order of definition doesn't matter *)
-      describe multiply_op;
-    ]
+  type shape = ((O.Val.t -> O.Val.t) *
+                ((O.Val.t -> O.Val.t) *
+                 ((float -> O.Val.t -> O.Val.t) *
+                  ((int64 -> O.Val.t -> O.Val.t) *
+                   (int32 -> int64 -> string -> unit -> O.Val.t -> O.Val.t)))))
+
+  let api = define D.(identity_op @ increment_op @ sleep_op @ multiply_op @ complex_op)
 end
 
 module Implementation: Interface.IMPL with type Val.t = int64 = struct
@@ -52,13 +52,19 @@ module Implementation: Interface.IMPL with type Val.t = int64 = struct
     | Some i -> Int64.mul (Int64.mul (Int64.mul (Int64.of_int32 i32) i64) i)
     | None -> Int64.mul Int64.minus_one
 
-  let api = define [
-      implement identity_op identity;
-      implement increment_op increment;
-      implement sleep_op sleep;
-      implement multiply_op multiply;
-      implement complex_op complex
-    ]
+  type shape = ((O.Val.t -> O.Val.t) *
+       ((O.Val.t -> O.Val.t) *
+        ((float -> O.Val.t -> O.Val.t) *
+         ((int64 -> O.Val.t -> O.Val.t) *
+          (int32 -> int64 -> string -> unit -> O.Val.t -> O.Val.t)))))
+
+  let api = define I.(
+      (identity_op, identity)
+      @ (increment_op, increment)
+      @ (sleep_op, sleep)
+      @ (multiply_op, multiply)
+      @ (complex_op, complex)
+    )
 end
 
 module IntPair (B: Backend.MAKER) (G: Irmin_git.G) = struct

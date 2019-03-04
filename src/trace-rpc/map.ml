@@ -120,7 +120,7 @@ module type S = sig
   val size: t -> int Lwt.t
   val keys: t -> key list Lwt.t
   val values: t -> Value.t list Lwt.t
-  val map: ?timeout:float -> 'a Operation.Unboxed.t -> 'a params -> t -> t Lwt.t
+  val map: ?timeout:float -> 'a Operation.interface -> 'a params -> t -> t Lwt.t
 end
 
 module Make
@@ -314,10 +314,13 @@ module Make
     | Ok () -> Lwt.return_unit
     | Error we -> Lwt.fail @@ Store_error we
 
-  let map: type a. ?timeout:float -> a Operation.Unboxed.t -> a params -> t -> t Lwt.t =
+  let map: type a. ?timeout:float -> a Operation.interface -> a params -> t -> t Lwt.t =
     fun ?(timeout=5.0) operation params m ->
 
     let l = m.local in
+    let operation = match operation with
+      | Operation.Unary o -> o
+      | _ -> invalid_arg "Misformed interface" in
 
     (* Generate a new unique branch name for the map *)
     let rec unique_name_gen () =

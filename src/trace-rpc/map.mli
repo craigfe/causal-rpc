@@ -111,7 +111,7 @@ module type S = sig
   val values: t -> Value.t list Lwt.t
   (** Return a list of values in the map *)
 
-  val map: ?timeout:float -> 'a Operation.Unboxed.t -> 'a params -> t -> t Lwt.t
+  val map: ?timeout:float -> 'a Operation.interface -> 'a params -> t -> t Lwt.t
   (** [map m] returns a map with the same domain as [m] in which
       the associated value [a] of all bindings of [m] have been
       replaced by the result of applying _a_ function to [a] *)
