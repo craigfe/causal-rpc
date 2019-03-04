@@ -10,11 +10,11 @@ end
 module O = Interface.MakeOperation(Int)
 open O
 
-let identity_op  = declare "identity" return
-let increment_op = declare "increment" return
-let multiply_op  = declare "multiply" Type.(int64 @-> return)
-let sleep_op     = declare "sleep" Type.(float @-> return)
-let complex_op   = declare "complex" Type.(int32 @-> int64 @-> string @-> unit @-> return)
+let identity_op  = declare "identity" Type.(int64 @-> int64)
+let increment_op = declare "increment" Type.(int64 @-> int64)
+let multiply_op  = declare "multiply" Type.(int64 @-> int64 @-> int64)
+let sleep_op     = declare "sleep" Type.(float @-> int64 @-> int64)
+let complex_op   = declare "complex" Type.(int32 @-> int64 @-> string @-> unit @-> int64 @-> int64)
 
 module Definition = struct
   module Val = Int

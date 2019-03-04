@@ -1,6 +1,19 @@
-type (_,_) func_type =
-  | BaseType : ('a, 'a -> 'a) func_type
-  | ParamType : ('t Type.t * ('a, 'b) func_type) -> ('a, ('t -> 'b)) func_type
+
+
+(* An RPC over values of type 'a *)
+type 'a rpc = {
+  name: string;
+  params: Type.Boxed.t list;
+  key: string;
+}
+
+(* A type assertion for an RPC function. We expose the base type in the type
+   signature, since it must match the contents of the store. *)
+
+type (_,_,_) func_type = (* (base type, full type, parameters -> rpc )*)
+  | UnitFunction : ('v, 'v -> 'v, 'v rpc) func_type
+  | Unary        : 't Type.t -> ('v, 't -> 'v -> 'v, 't Type.t -> 'v rpc) func_type
+  | MultiArg     : ('t Type.t * ('v, 'f, 'rpcf) func_type) -> ('v, 't -> 'f, 't -> 'rpcf) func_type
 
 type (_,_) params_gadt =
   | Unit : ('v, 'v -> 'v) params_gadt
@@ -11,7 +24,7 @@ module type OPERATION = sig
 
   module Unboxed: sig
     type 'a t
- 
+
     val name: 'a t -> string
     val typ:  'a t -> (Val.t, 'a) func_type
   end
@@ -21,7 +34,6 @@ module type OPERATION = sig
   type 'a matched_implementation = 'a Unboxed.t * 'a
   type boxed_mi = | E: 'a matched_implementation -> boxed_mi
 
-  val return: ('a, 'a -> 'a) func_type
   val (@->): 'p Type.t -> ('a, 'b) func_type -> ('a, 'p -> 'b) func_type
   val declare: string -> (Val.t, 'b) func_type -> 'b Unboxed.t
 
@@ -32,9 +44,9 @@ module MakeOperation(T: Irmin.Contents.S): OPERATION with module Val = T = struc
   module Val = T
 
   module Unboxed = struct
-    type 'a t = {
+    type ('a, 'rpc) t = {
       name: string;
-      typ: (Val.t, 'a) func_type;
+)      typ: (Val.t, 'a, 'rpc) func_type; (* Set the base type to be Val.t *)
     }
 
     let name {name = n; _} = n
@@ -42,13 +54,13 @@ module MakeOperation(T: Irmin.Contents.S): OPERATION with module Val = T = struc
   end
 
   type 'a params = (Val.t, 'a) params_gadt
-  type t = | B: 'a Unboxed.t -> t
-  type 'a matched_implementation = 'a Unboxed.t * 'a
+  type t = | B: ('a, 'rpc) Unboxed.t -> t
+  type 'a matched_implementation = ('a, 'rpc) Unboxed.t * 'a
   type boxed_mi = | E: 'a matched_implementation -> boxed_mi
 
-
-  let return = BaseType
-  let (@->) p f = ParamType (p, f)
+(* Take a parameter type and the rest of the function *)
+let (@->) (p: 'p Type.t) f = match f with
+  | ParamType (p, f)
 
   let declare name typ: 'a Unboxed.t = {Unboxed.name = name; Unboxed.typ = typ}
 

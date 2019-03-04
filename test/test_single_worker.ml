@@ -34,7 +34,7 @@ let basic_tests _ () =
   let root = "/tmp/irmin/increment/" in
 
   IntMap.empty ~directory:(root ^ "test-0001") ()
-  >>= IntMap.map increment_op Interface.Unit
+  >>= IntMap.map increment_op
   >|= (fun _ -> Alcotest.(check pass "Calling map on an empty Map terminates" () ()))
 
 let timeout_tests () =

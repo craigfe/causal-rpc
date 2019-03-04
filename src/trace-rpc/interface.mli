@@ -1,5 +1,8 @@
+type 'a rpc
+(** An operation with functional type 'a *)
+
 type (_,_) func_type =
-  | BaseType : ('a, 'a -> 'a) func_type
+  | BaseType : ('a, ('a -> 'a) rpc)  func_type
   | ParamType : ('t Type.t * ('a, 'b) func_type) -> ('a, ('t -> 'b)) func_type
 
 type (_,_) params_gadt =
@@ -27,11 +30,13 @@ module type OPERATION = sig
 
   type boxed_mi = | E: 'a matched_implementation -> boxed_mi
 
-  val return: ('a, 'a -> 'a) func_type
+  (* Take an operation and resolve it to an executable RPC by boxing the parameters *)
+  val apply: 'a Unboxed.t -> 'a rpc
 
+  (* Given a parameter *)
   val (@->): 'p Type.t -> ('a, 'b) func_type -> ('a, 'p -> 'b) func_type
 
-  val declare: string -> (Val.t, 'b) func_type -> 'b Unboxed.t
+  val declare: string -> (Val.t, 'b) func_type -> ('b -> )
   (** Declare a function with a name and a number of arguments *)
 
   val compare: t -> t -> int
