@@ -27,7 +27,7 @@ module Definition = struct
                   ((int64 -> O.Val.t -> O.Val.t) *
                    (int32 -> int64 -> string -> unit -> O.Val.t -> O.Val.t)))))
 
-  let api = define D.(identity_op @ increment_op @ sleep_op @ multiply_op @ complex_op)
+  let api = define (identity_op @ increment_op @ sleep_op @ multiply_op @ finally complex_op)
 end
 
 module Implementation: Interface.IMPL with type Val.t = int64 = struct
@@ -50,12 +50,11 @@ module Implementation: Interface.IMPL with type Val.t = int64 = struct
          ((int64 -> O.Val.t -> O.Val.t) *
           (int32 -> int64 -> string -> unit -> O.Val.t -> O.Val.t)))))
 
-  let api = define
-      I.((identity_op, identity)
+  let api = define ((identity_op, identity)
          @ (increment_op, increment)
          @ (sleep_op, sleep)
          @ (multiply_op, multiply)
-         @ (complex_op, complex))
+         @ finally (complex_op, complex))
 end
 
 module IntPair (B: Backend.MAKER) (G: Irmin_git.G) = struct

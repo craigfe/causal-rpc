@@ -1,15 +1,16 @@
-type (_,_) prototype =
-  | BaseType : ('a, 'a -> 'a) prototype
-  | ParamType : ('t Type.t * ('a, 'b) prototype) -> ('a, ('t -> 'b)) prototype
-
 type (_,_) params =
   | Unit : ('v, 'v -> 'v) params
   | Param : ('p Type.t * 'p * ('v,'a) params) -> ('v, 'p -> 'a) params
 
+type (_,_,_) prototype =
+  | BaseType : ('a, 'a -> 'a, ('a, 'a -> 'a) params) prototype
+  | ParamType : ('t Type.t * ('a, 'b, ('a, 'p) params) prototype)
+      -> ('a, ('t -> 'b), ('a, 't -> 'p) params) prototype
+
 module NamedOp = struct
-  type ('v, 'a) t = {
+  type ('v, 'a, 'p) t = {
     name: string;
-    typ: ('v, 'a) prototype;
+    typ: ('v, 'a, 'p) prototype;
   }
 
   let name {name = n; _} = n
@@ -18,25 +19,33 @@ end
 
 (* TODO: Use open records instead? *)
 type (_,_) interface =
-  | Unary : ('v,'a) NamedOp.t -> ('v,'a) interface
-  | Complex : (('v,'a) NamedOp.t * ('v, 'b) interface) -> ('v, 'a * 'b) interface
+  | Unary : ('v,'a,'p) NamedOp.t -> ('v,'a) interface
+  | Complex : (('v,'a,'p) NamedOp.t * ('v, 'b) interface) -> ('v, 'a * 'b) interface
 
 type ('v,'a) implementation = ('v,'a) interface * 'a
 
 module type OPERATION = sig
   module Val: Irmin.Contents.S
 
-  type t = | B: (Val.t, 'a) NamedOp.t -> t
-  type 'a matched_implementation = (Val.t, 'a) NamedOp.t * 'a
-  type boxed_mi = | E: 'a matched_implementation -> boxed_mi
+  type t = | B: (Val.t, 'a, 'p) NamedOp.t -> t
+  type ('a, 'p) matched_implementation = (Val.t, 'a, 'p) NamedOp.t * 'a
+  type boxed_mi = | E: ('a, 'p) matched_implementation -> boxed_mi
 
   val flatten_params: (Val.t, 'a) params -> Type.Boxed.t list
   val pass_params: ?src:Logs.src -> boxed_mi -> Type.Boxed.box list -> Val.t -> Val.t
 
-  (* val apply: ('v,'a) interface -> 'a -> (('v,'a) interface * ('v, 'a) params) *)
-  val return: ('a, 'a -> 'a) prototype
-  val (@->): 'p Type.t -> ('a, 'b) prototype -> ('a, 'p -> 'b) prototype
-  val declare: string -> (Val.t, 'b) prototype -> (Val.t, 'b) interface
+  (* apply multiply_op 5 10 *)
+  (* val map: (Value.t,'a) Interface.interface -> 'a params -> t -> t Lwt.t *)
+
+  (* ('v, 'a) interface -> 'a*)
+  (* val apply: ('v,'a,'p) interface -> 'a -> (('v,'a,'p) interface * ('v, 'a) params) *)
+  val return: ('a, 'a -> 'a, ('a, 'a -> 'a) params) prototype
+
+  val (@->): 't Type.t
+    -> ('a, 'b, ('a, 'p) params) prototype
+    -> ('a, ('t -> 'b), ('a, 't -> 'p) params) prototype
+
+  val declare: string -> (Val.t, 'b, 'p) prototype -> (Val.t, 'b, 'p) NamedOp.t
 
   val compare: t -> t -> int
 end
@@ -44,9 +53,9 @@ end
 module MakeOperation(T: Irmin.Contents.S): OPERATION with module Val = T = struct
   module Val = T
 
-  type t = | B: (Val.t, 'a) NamedOp.t -> t
-  type 'a matched_implementation = (Val.t, 'a) NamedOp.t * 'a
-  type boxed_mi = | E: 'a matched_implementation -> boxed_mi
+  type t = | B: (Val.t, 'a, 'p) NamedOp.t -> t
+  type ('a, 'p) matched_implementation = (Val.t, 'a, 'p) NamedOp.t * 'a
+  type boxed_mi = | E: ('a, 'p) matched_implementation -> boxed_mi
 
   let rec flatten_params: type v a. (v, a) params -> Type.Boxed.t list = fun ps ->
     match ps with
@@ -64,8 +73,8 @@ module MakeOperation(T: Irmin.Contents.S): OPERATION with module Val = T = struc
 
       (* We take a function type and a function _of that type_, and recursively apply parameters
          to the function until it reaches 'BaseType', i.e. val -> val *)
-      let rec aux: type a.
-        (Val.t, a) prototype
+      let rec aux: type a p.
+        (Val.t, a, p) prototype
         -> a
         -> Type.Boxed.t list
         -> (Val.t -> Val.t) = fun func_type func params ->
@@ -95,8 +104,8 @@ module MakeOperation(T: Irmin.Contents.S): OPERATION with module Val = T = struc
    *     in construct_params
    *   | _ -> invalid_arg "Cannot apply complex interfaces" *)
 
-  let declare name typ: ('v,'a) interface =
-    Unary {NamedOp.name = name; NamedOp.typ = typ}
+  let declare name typ: (Val.t, 'a, 'p) NamedOp.t =
+    {NamedOp.name = name; NamedOp.typ = typ}
 
   let compare a b =
     match (a, b) with
@@ -115,15 +124,14 @@ module Description(Val: Irmin.Contents.S) = struct
 
   let describe unboxed = Op.B unboxed
 
-  let rec interface_to_list: type i. (Val.t, i) interface -> Op.t list = fun interface ->
+  let rec interface_to_list: type i p. (Val.t, i) interface -> Op.t list = fun interface ->
     match interface with
     | Unary t -> [Op.B t]
     | Complex (t, ts) -> (Op.B t)::interface_to_list(ts)
 
-  let (@): type a b. (Val.t, a) interface -> (Val.t,b) interface -> (Val.t, a * b) interface = fun i is ->
-      match i with
-      | Unary t -> Complex (t, is)
-      | _ -> invalid_arg "Cannot compose implementations like this"
+  let (@) i is = Complex (i, is)
+
+  let finally op = Unary op
 
   let define: (Val.t, 'i) interface -> 'i t = fun interface ->
     let l = interface_to_list interface in
@@ -146,9 +154,11 @@ module type IMPL_MAKER = sig
   type 'i t
   (** The type of implementations with type structure 'i from type 'a to 'a *)
 
-  val (@): (Op.Val.t,'a) implementation
-    -> (Op.Val.t,'b) implementation
-    -> (Op.Val.t,'a * 'b) implementation
+  val (@): ((Op.Val.t, 'a, 'p) NamedOp.t * 'a)
+    -> (Op.Val.t, 'b) implementation
+    -> (Op.Val.t, 'a * 'b) implementation
+
+  val finally: ((Op.Val.t, 'a, 'p) NamedOp.t * 'a) -> (Op.Val.t, 'a) implementation
 
   val define: (Op.Val.t,'i) implementation -> 'i t
   (** Construct an RPC implementation from a list of pairs of operations and
@@ -168,14 +178,14 @@ module MakeImplementation(T: Irmin.Contents.S): IMPL_MAKER
      with string parameters *)
   type 'i t = (string, Op.boxed_mi) Hashtbl.t
 
+  let finally: type a p. ((Op.Val.t, a, p) NamedOp.t * a) -> (Op.Val.t, a) implementation =
+    fun (prototype, operation) -> (Unary prototype, operation)
+
   (* Combine two implementations by aggregating the prototypes and storing the
      functions as nested pairs. We require that the first implementation contains only a
      single operation. *)
-  let (@) (proto_interface, func) (acc_interface, acc_functions) =
-
-      match proto_interface with
-    | Unary proto -> (Complex (proto, acc_interface), (func, acc_functions))
-    | _ -> invalid_arg "Cannot compose implementations like this"
+  let (@) (prototype, operation) (acc_interface, acc_functions) =
+    Complex (prototype, acc_interface), (operation, acc_functions)
 
   (* Helper function to add a type declaration and function to a hashtable *)
   let add_to_hashtable h typ func =
