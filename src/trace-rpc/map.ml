@@ -1,6 +1,5 @@
 open Lwt.Infix
-
-exception Empty_queue
+module E = Exceptions
 
 type job = string
 type job_queue = job list
@@ -73,10 +72,6 @@ module MakeContents (Val: Irmin.Contents.S): Irmin.Contents.S
   let merge = Irmin.Merge.(option (v t merge))
 
 end
-
-exception Malformed_params of string
-exception Protocol_error of string
-exception Timeout
 
 module type S = sig
 
@@ -287,15 +282,10 @@ module Make
     get_task_queue branch
     >|= fun (a, b) -> (List.length a) + (List.length b)
 
-  let rec flatten_params: type a. a params -> Type.Boxed.t list = fun ps ->
-    match ps with
-    | Interface.Unit -> []
-    | Interface.Param (typ, p, ps) -> ((Type.Boxed.box typ p)::flatten_params(ps))
-
   let generate_task_queue: type a. (value, a) Interface.NamedOp.t -> a params -> t -> value contents Lwt.t = fun operation params map ->
     let open Task_queue in
     let name = Interface.NamedOp.name operation in
-    let param_list = flatten_params params in
+    let param_list = Operation.flatten_params params in
 
     keys map
     >|= List.map (fun key -> {name; params = param_list; key})
@@ -375,7 +365,7 @@ module Make
                           (fun m -> m "Woke up due to submitted work for a job %s, but the currently executing job is %s"
                               (JobQueue.Impl.job_to_string j) map_name)
 
-            | None -> Lwt.fail @@ Protocol_error (Printf.sprintf "Received work on branch %s, but there is no job on this branch" br_name))
+            | None -> Lwt.fail @@ E.Protocol_error (Printf.sprintf "Received work on branch %s, but there is no job on this branch" br_name))
 
       end else
         Logs_lwt.warn (fun m -> m "Woke up due to an irrelevant branch %s when waiting for work on %s" br_name map_name)
@@ -395,7 +385,7 @@ module Make
 
       else if !inactivity_count >= timeout then (* we have been waiting for too long *)
         Logs_lwt.app (fun m -> m "Inactivity count: %f" (!inactivity_count))
-        >>= fun () -> Lwt.fail Timeout
+        >>= fun () -> Lwt.fail E.Timeout
 
       else (* we will wait for a bit *)
         task_queue_size branch

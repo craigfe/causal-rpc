@@ -1,6 +1,4 @@
 
-exception Empty_queue
-
 (** A task is an operation, a list of parameters and a key specifying the value
     on which to perform the operation *)
 
@@ -31,10 +29,6 @@ end
 
 module MakeContents (Val: Irmin.Contents.S): Irmin.Contents.S
   with type t = Val.t contents
-
-exception Malformed_params of string
-exception Protocol_error of string
-exception Timeout
 
 module type S = sig
   type key = string

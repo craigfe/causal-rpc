@@ -150,7 +150,7 @@ module Make
     >>= (fun cont -> (match cont with
         | Some Value v -> Lwt.return v
         | Some _ -> Lwt.fail Internal_type_error
-        | None -> Lwt.fail @@ Map.Protocol_error (Printf.sprintf "Value <%s> could not be found when attempting to perform %s operation" task.key task.name)))
+        | None -> Lwt.fail @@ Exceptions.Protocol_error (Printf.sprintf "Value <%s> could not be found when attempting to perform %s operation" task.key task.name)))
 
     >>= fun old_val -> E.execute_task ?src (boxed_mi ()) task.params old_val
     >|= fun new_val -> (task, new_val)

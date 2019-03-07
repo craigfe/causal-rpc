@@ -47,7 +47,7 @@ let timeout_tests () =
       >>= IntMap.map ~timeout:epsilon_float increment_op Interface.Unit
       >|= fun _ -> Alcotest.(fail descr))
 
-  with Map.Timeout -> Alcotest.(check pass descr Map.Timeout Map.Timeout)
+  with Exceptions.Timeout -> Alcotest.(check pass descr Exceptions.Timeout Exceptions.Timeout)
 
 (** Tests of the scheduling infrastructure and workers, using noops to do 'work' *)
 let noop_tests s () =
