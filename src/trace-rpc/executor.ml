@@ -21,7 +21,7 @@ module Make(I: Interface.IMPL_MAKER): S with module I = I = struct
     match boxed_mi with
     | I.Op.E matched_impl ->
       let (unboxed, func) = matched_impl in
-      let func_type = I.Op.Unboxed.typ unboxed in
+      let func_type = Interface.NamedOp.typ unboxed in
 
       (* We take a function type and a function _of that type_, and recursively apply parameters
          to the function until it reaches 'BaseType', i.e. val -> val *)

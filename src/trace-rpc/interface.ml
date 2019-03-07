@@ -2,34 +2,38 @@ type (_,_) func_type =
   | BaseType : ('a, 'a -> 'a) func_type
   | ParamType : ('t Type.t * ('a, 'b) func_type) -> ('a, ('t -> 'b)) func_type
 
-type (_,_) params_gadt =
-  | Unit : ('v, 'v -> 'v) params_gadt
-  | Param : ('p Type.t * 'p * ('v,'a) params_gadt) -> ('v, 'p -> 'a) params_gadt
+type (_,_) params =
+  | Unit : ('v, 'v -> 'v) params
+  | Param : ('p Type.t * 'p * ('v,'a) params) -> ('v, 'p -> 'a) params
+
+module NamedOp = struct
+  type ('v, 'a) t = {
+    name: string;
+    typ: ('v, 'a) func_type;
+  }
+
+  let name {name = n; _} = n
+  let typ {name = _; typ = t} = t
+end
+
+type (_,_) interface =
+  | Unary : ('v,'a) NamedOp.t -> ('v,'a) interface
+  | Complex : (('v,'a) NamedOp.t * ('v, 'b) interface) -> ('v, 'a * 'b) interface
+
+type ('v,'a) implementation = ('v,'a) interface * 'a
 
 module type OPERATION = sig
   module Val: Irmin.Contents.S
 
-  module Unboxed: sig
-    type 'a t
 
-    val name: 'a t -> string
-    val typ:  'a t -> (Val.t, 'a) func_type
-  end
-
-  type _ interface =
-    | Unary : 'a Unboxed.t -> 'a interface
-    | Complex : ('a Unboxed.t * 'b interface) -> ('a * 'b) interface
-
-  type 'a implementation = 'a interface * 'a
-
-  type 'a params = (Val.t, 'a) params_gadt
-  type t = | B: 'a Unboxed.t -> t
-  type 'a matched_implementation = 'a Unboxed.t * 'a
+  type t = | B: (Val.t, 'a) NamedOp.t -> t
+  type 'a matched_implementation = (Val.t, 'a) NamedOp.t * 'a
   type boxed_mi = | E: 'a matched_implementation -> boxed_mi
 
+  (* val apply: ('v,'a) interface -> 'a -> (('v,'a) interface * ('v, 'a) params) *)
   val return: ('a, 'a -> 'a) func_type
   val (@->): 'p Type.t -> ('a, 'b) func_type -> ('a, 'p -> 'b) func_type
-  val declare: string -> (Val.t, 'b) func_type -> 'b interface
+  val declare: string -> (Val.t, 'b) func_type -> (Val.t, 'b) interface
 
   val compare: t -> t -> int
 end
@@ -37,37 +41,26 @@ end
 module MakeOperation(T: Irmin.Contents.S): OPERATION with module Val = T = struct
   module Val = T
 
-  module Unboxed = struct
-    type 'a t = {
-      name: string;
-      typ: (Val.t, 'a) func_type;
-    }
-
-    let name {name = n; _} = n
-    let typ {name = _; typ = t} = t
-  end
-
-  type _ interface =
-    | Unary : 'a Unboxed.t -> 'a interface
-    | Complex : ('a Unboxed.t * 'b interface) -> ('a * 'b) interface
-
-  type 'a implementation = 'a interface * 'a
-
-  type 'a params = (Val.t, 'a) params_gadt
-  type t = | B: 'a Unboxed.t -> t
-  type 'a matched_implementation = 'a Unboxed.t * 'a
+  type t = | B: (Val.t, 'a) NamedOp.t -> t
+  type 'a matched_implementation = (Val.t, 'a) NamedOp.t * 'a
   type boxed_mi = | E: 'a matched_implementation -> boxed_mi
-
 
   let return = BaseType
   let (@->) p f = ParamType (p, f)
 
-  let declare name typ: 'a interface =
-    Unary {Unboxed.name = name; Unboxed.typ = typ}
+  (* let apply: ('v,'a) interface -> 'a -> (('v,'a) interface * ('v, 'a) params) = fun interface ->
+   *   match interface with
+   *   | Unary funtype -> let rec construct_params p = match p with
+   *       | 
+   *     in construct_params
+   *   | _ -> invalid_arg "Cannot apply complex interfaces" *)
+
+  let declare name typ: ('v,'a) interface =
+    Unary {NamedOp.name = name; NamedOp.typ = typ}
 
   let compare a b =
     match (a, b) with
-    | B {Unboxed.name = n1; _}, B {Unboxed.name = n2; _} ->
+    | B {NamedOp.name = n1; _}, B {NamedOp.name = n2; _} ->
       String.compare n1 n2
 end
 
@@ -82,17 +75,17 @@ module Description(Val: Irmin.Contents.S) = struct
 
   let describe unboxed = Op.B unboxed
 
-  let rec interface_to_list: type i. i Op.interface -> Op.t list = fun interface ->
+  let rec interface_to_list: type i. (Val.t, i) interface -> Op.t list = fun interface ->
     match interface with
-    | Op.Unary t -> [Op.B t]
-    | Op.Complex (t, ts) -> (Op.B t)::interface_to_list(ts)
+    | Unary t -> [Op.B t]
+    | Complex (t, ts) -> (Op.B t)::interface_to_list(ts)
 
-  let (@): 'a Op.interface -> 'b Op.interface -> ('a * 'b) Op.interface = fun i is ->
+  let (@): type a b. (Val.t, a) interface -> (Val.t,b) interface -> (Val.t, a * b) interface = fun i is ->
       match i with
-      | Op.Unary t -> Op.Complex (t, is)
+      | Unary t -> Complex (t, is)
       | _ -> invalid_arg "Cannot compose implementations like this"
 
-  let define: 'i Op.interface -> 'i t = fun interface ->
+  let define: (Val.t, 'i) interface -> 'i t = fun interface ->
     let l = interface_to_list interface in
     let len = List.length l in
     let set = OpSet.of_list l in
@@ -103,7 +96,7 @@ module Description(Val: Irmin.Contents.S) = struct
 
   let valid_name name d =
     OpSet.exists (fun b -> match b with
-        | Op.B unboxed -> (Op.Unboxed.name unboxed) == name) d
+        | Op.B unboxed -> (NamedOp.name unboxed) == name) d
 end
 
 module type IMPL_MAKER = sig
@@ -113,9 +106,11 @@ module type IMPL_MAKER = sig
   type 'i t
   (** The type of implementations with type structure 'i from type 'a to 'a *)
 
-  val (@): 'a Op.implementation -> 'b Op.implementation -> ('a * 'b) Op.implementation
+  val (@): (Op.Val.t,'a) implementation
+    -> (Op.Val.t,'b) implementation
+    -> (Op.Val.t,'a * 'b) implementation
 
-  val define: 'i Op.implementation -> 'i t
+  val define: (Op.Val.t,'i) implementation -> 'i t
   (** Construct an RPC implementation from a list of pairs of operations and
       implementations of those operations *)
 
@@ -136,16 +131,15 @@ module MakeImplementation(T: Irmin.Contents.S): IMPL_MAKER
   (* Combine two implementations by aggregating the prototypes and storing the
      functions as nested pairs. We require that the first implementation contains only a
      single operation. *)
-  let (@): 'a Op.implementation -> 'b Op.implementation -> ('a * 'b) Op.implementation
-    = fun (proto_interface, func) (acc_interface, acc_functions) ->
+  let (@) (proto_interface, func) (acc_interface, acc_functions) =
 
       match proto_interface with
-    | Op.Unary proto -> (Op.Complex (proto, acc_interface), (func, acc_functions))
+    | Unary proto -> (Complex (proto, acc_interface), (func, acc_functions))
     | _ -> invalid_arg "Cannot compose implementations like this"
 
   (* Helper function to add a type declaration and function to a hashtable *)
   let add_to_hashtable h typ func =
-    let n = Op.Unboxed.name typ in (* the name of the function *)
+    let n = NamedOp.name typ in (* the name of the function *)
     let boxed = Op.E (typ, func) in (* the format we store in the hashmap *)
 
     (match Hashtbl.find_opt h n with
@@ -158,13 +152,13 @@ module MakeImplementation(T: Irmin.Contents.S): IMPL_MAKER
 
   (* Simply convert the list to a hashtable, return an exception if there
      are any duplicate function names *)
-  let define: 'i Op.implementation -> 'i t = fun fns ->
+  let define fns =
 
     let h = Hashtbl.create 10 in
 
-    let rec aux: type a. a Op.implementation -> unit = fun impl -> match impl with
-      | (Op.Unary t, f) -> add_to_hashtable h t f
-      | (Op.Complex (t, ts), (f, fs)) -> add_to_hashtable h t f; aux (ts, fs)
+    let rec aux: type a. (Op.Val.t, a) implementation -> unit = fun impl -> match impl with
+      | (Unary t, f) -> add_to_hashtable h t f
+      | (Complex (t, ts), (f, fs)) -> add_to_hashtable h t f; aux (ts, fs)
 
     in aux fns; h
 

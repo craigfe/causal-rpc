@@ -37,14 +37,14 @@ exception Protocol_error of string
 exception Timeout
 
 module type S = sig
-  module Value: Irmin.Contents.S
-
   type key = string
   (** The type of the map keys *)
 
   type t
   (** The type of maps from type [key] to type [value] *)
 
+  module Description: Interface.DESC
+  module Value = Description.Val
   module Contents: Irmin.Contents.S with type t = Value.t contents
   module B: Backend.S
   module Store: Irmin_git.S
@@ -57,14 +57,10 @@ module type S = sig
   module JobQueue: JOB_QUEUE with module Store = Store
   module Operation: Interface.OPERATION with module Val = Value
 
-  type 'a params = 'a Interface.MakeOperation(Value).params
+  type 'a params = (Value.t, 'a) Interface.params
 
   exception Internal_type_error
   exception Store_error of Store.write_error
-
-  (* -- TESTING PURPOSES --------------------------------- *)
-  val generate_task_queue: 'a Operation.Unboxed.t -> 'a params -> t -> Value.t contents Lwt.t
-  (* ----------------------------------------------------- *)
 
   val of_store: Sync.db -> t
   (** Return the map corresponding to an underlying store representation *)
@@ -111,7 +107,7 @@ module type S = sig
   val values: t -> Value.t list Lwt.t
   (** Return a list of values in the map *)
 
-  val map: ?timeout:float -> 'a Operation.interface -> 'a params -> t -> t Lwt.t
+  val map: ?timeout:float -> (Value.t,'a) Interface.interface -> 'a params -> t -> t Lwt.t
   (** [map m] returns a map with the same domain as [m] in which
       the associated value [a] of all bindings of [m] have been
       replaced by the result of applying _a_ function to [a] *)
@@ -130,7 +126,7 @@ module Make
          and type Store.contents = Val.t contents
          and type Store.branch = string)
        -> (JOB_QUEUE with module Store = B.Store)): S
-  with module Value = Desc.Val
+  with module Description = Desc
    and module Operation = Interface.MakeOperation(Desc.Val)
 (** Functor building an implementation of the map structure given:
      - a value for the map to contain

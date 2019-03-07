@@ -80,12 +80,12 @@ exception Timeout
 
 module type S = sig
 
-  module Value: Irmin.Contents.S
-
   type key = string
 
   type t
 
+  module Description: Interface.DESC
+  module Value = Description.Val
   module Contents: Irmin.Contents.S with type t = Value.t contents
   module B: Backend.S
   module Store: Irmin_git.S
@@ -101,11 +101,7 @@ module type S = sig
 
   exception Internal_type_error
   exception Store_error of Store.write_error
-  type 'a params = 'a Interface.MakeOperation(Value).params
-
-  (* Here for testing purposes *)
-  val generate_task_queue: 'a Operation.Unboxed.t -> 'a params -> t -> Value.t contents Lwt.t
-  (* ------------------------- *)
+  type 'a params = (Value.t, 'a) Interface.params
 
   val of_store: Sync.db -> t
   val to_store: t -> Sync.db
@@ -120,7 +116,7 @@ module type S = sig
   val size: t -> int Lwt.t
   val keys: t -> key list Lwt.t
   val values: t -> Value.t list Lwt.t
-  val map: ?timeout:float -> 'a Operation.interface -> 'a params -> t -> t Lwt.t
+  val map: ?timeout:float -> (Value.t,'a) Interface.interface -> 'a params -> t -> t Lwt.t
 end
 
 module Make
@@ -137,10 +133,11 @@ module Make
          and type Store.branch = string)
        -> (JOB_QUEUE with module Store = B.Store)
     ): S
-  with module Value = Desc.Val
+  with module Description = Desc
    and module Operation = Interface.MakeOperation(Desc.Val) = struct
 
-  module Value = Desc.Val
+  module Description = Desc
+  module Value = Description.Val
   module Contents = MakeContents(Desc.Val)
   module B = BackendMaker(GitBackend)(Contents)
   module Store = B.Store
@@ -150,7 +147,7 @@ module Make
 
   type key = string
   type value = Value.t
-  type 'a params = 'a Operation.params
+  type 'a params = (Value.t, 'a) Interface.params
 
   type t = {
     local: Store.t;
@@ -295,9 +292,9 @@ module Make
     | Interface.Unit -> []
     | Interface.Param (typ, p, ps) -> ((Type.Boxed.box typ p)::flatten_params(ps))
 
-  let generate_task_queue: type a. a Operation.Unboxed.t -> a params -> t -> value contents Lwt.t = fun operation params map ->
+  let generate_task_queue: type a. (value, a) Interface.NamedOp.t -> a params -> t -> value contents Lwt.t = fun operation params map ->
     let open Task_queue in
-    let name = Operation.Unboxed.name operation in
+    let name = Interface.NamedOp.name operation in
     let param_list = flatten_params params in
 
     keys map
@@ -314,12 +311,11 @@ module Make
     | Ok () -> Lwt.return_unit
     | Error we -> Lwt.fail @@ Store_error we
 
-  let map: type a. ?timeout:float -> a Operation.interface -> a params -> t -> t Lwt.t =
-    fun ?(timeout=5.0) operation params m ->
+  let map ?(timeout=5.0) operation params m =
 
     let l = m.local in
     let operation = match operation with
-      | Operation.Unary o -> o
+      | Interface.Unary o -> o
       | _ -> invalid_arg "Misformed interface" in
 
     (* Generate a new unique branch name for the map *)
