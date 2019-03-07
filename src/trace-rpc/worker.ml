@@ -282,15 +282,26 @@ module Make
 
     let config = Irmin_git.config ~bare:false dir in
 
-    if String.sub dir 0 11 <> "/tmp/irmin/"
-    then invalid_arg ("Supplied directory (" ^ dir ^ ") must be in /tmp/irmin/");
+
+    Logs_lwt.debug (fun m -> m "Beginning to initialise worker")
+
+    >>= fun () -> Logs.debug (fun m -> m "Checking that %s has a safe prefix" dir);
+
+    if String.sub dir 0 11 <> "/tmp/irmin/" then
+       Lwt.fail_with ("Supplied directory (" ^ dir ^ ") must be in /tmp/irmin/")
+     else Lwt.return_unit
 
     (* Delete the directory if it already exists... Unsafe! *)
-    let ret_code = Sys.command ("rm -rf " ^ dir) in
-    if (ret_code <> 0) then invalid_arg "Unable to delete directory";
+    >>= fun () -> Logs_lwt.debug (fun m -> m "Deleting pre-existing directory")
+    >>= fun () -> let ret_code = Sys.command ("rm -rf " ^ dir) in
+    (if ret_code <> 0 then
+       Lwt.fail_with "Unable to delete directory"
+     else Lwt.return_unit)
 
     (* Initialise the task executor *)
-    E.initialise ?src ~thread_count;
+    >>= fun () -> Logs_lwt.debug (fun m -> m "Initialising the task executor")
+    >>= fun () -> Lwt.return (E.initialise ?src ~thread_count)
+    >>= fun () ->
 
     (* Store a set of the jobs we have completed before *)
     (* TODO: prevent this from growing infinitely? *)
@@ -299,10 +310,12 @@ module Make
     let job_to_string = JobQueue.Impl.job_to_string in
 
     Logs_lwt.app ?src (fun m -> m "Initialising worker with name %s for client %s" name client)
+    >>= fun () -> Logs_lwt.app ?src (fun m -> m "Worker repo contained in %s" dir)
     >>= fun () -> Store.Repo.v config
     >>= fun s -> Store.master s
+    >>= fun master -> Logs_lwt.debug ?src (fun m -> m "Store constructed")
 
-    >>= fun master -> upstream client "master"
+    >>= fun () -> upstream client "master"
     >>= fun upstr ->
 
     let rec inner () =

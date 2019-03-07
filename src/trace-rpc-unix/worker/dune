@@ -1,5 +1,5 @@
 (executable
   (name main)
-  (public_name mwe)
+  (public_name trace-rpc)
   (package     trace-rpc-unix)
-  (libraries   trace-rpc trace-rpc-unix lwt.unix))
+  (libraries   trace-rpc-unix))
