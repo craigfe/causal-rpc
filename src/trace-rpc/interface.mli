@@ -1,6 +1,6 @@
-type (_,_) func_type =
-  | BaseType : ('a, 'a -> 'a) func_type
-  | ParamType : ('t Type.t * ('a, 'b) func_type) -> ('a, ('t -> 'b)) func_type
+type (_,_) prototype =
+  | BaseType : ('a, 'a -> 'a) prototype
+  | ParamType : ('t Type.t * ('a, 'b) prototype) -> ('a, ('t -> 'b)) prototype
 
 type (_,_) params =
   | Unit : ('v, 'v -> 'v) params
@@ -13,7 +13,7 @@ module NamedOp: sig
   val name: ('v, 'a) t -> string
   (** Return the name of an operation *)
 
-  val typ: ('v, 'a) t -> ('v, 'a) func_type
+  val typ: ('v, 'a) t -> ('v, 'a) prototype
   (** Return the name of an operation *)
 end
 
@@ -33,12 +33,12 @@ module type OPERATION = sig
   type boxed_mi = | E: 'a matched_implementation -> boxed_mi
 
   (* val apply: ('v,'a) interface -> 'a -> (('v,'a) interface * ('v, 'a) params) *)
-  val return: ('a, 'a -> 'a) func_type
+  val return: ('a, 'a -> 'a) prototype
 
-  val (@->): 'p Type.t -> ('a, 'b) func_type -> ('a, 'p -> 'b) func_type
+  val (@->): 'p Type.t -> ('a, 'b) prototype -> ('a, 'p -> 'b) prototype
   (** Combinator for describing functional types *)
 
-  val declare: string -> (Val.t, 'b) func_type -> (Val.t, 'b) interface
+  val declare: string -> (Val.t, 'b) prototype -> (Val.t, 'b) interface
   (** Declare a function with a name and a number of arguments *)
 
   val compare: t -> t -> int

@@ -26,7 +26,7 @@ module Make(I: Interface.IMPL_MAKER): S with module I = I = struct
       (* We take a function type and a function _of that type_, and recursively apply parameters
          to the function until it reaches 'BaseType', i.e. val -> val *)
       let rec aux: type a.
-        (value, a) Interface.func_type
+        (value, a) Interface.prototype
         -> a
         -> Type.Boxed.t list
         -> (value -> value) = fun func_type func params ->

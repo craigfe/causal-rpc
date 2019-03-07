@@ -1,6 +1,6 @@
-type (_,_) func_type =
-  | BaseType : ('a, 'a -> 'a) func_type
-  | ParamType : ('t Type.t * ('a, 'b) func_type) -> ('a, ('t -> 'b)) func_type
+type (_,_) prototype =
+  | BaseType : ('a, 'a -> 'a) prototype
+  | ParamType : ('t Type.t * ('a, 'b) prototype) -> ('a, ('t -> 'b)) prototype
 
 type (_,_) params =
   | Unit : ('v, 'v -> 'v) params
@@ -9,7 +9,7 @@ type (_,_) params =
 module NamedOp = struct
   type ('v, 'a) t = {
     name: string;
-    typ: ('v, 'a) func_type;
+    typ: ('v, 'a) prototype;
   }
 
   let name {name = n; _} = n
@@ -31,9 +31,9 @@ module type OPERATION = sig
   type boxed_mi = | E: 'a matched_implementation -> boxed_mi
 
   (* val apply: ('v,'a) interface -> 'a -> (('v,'a) interface * ('v, 'a) params) *)
-  val return: ('a, 'a -> 'a) func_type
-  val (@->): 'p Type.t -> ('a, 'b) func_type -> ('a, 'p -> 'b) func_type
-  val declare: string -> (Val.t, 'b) func_type -> (Val.t, 'b) interface
+  val return: ('a, 'a -> 'a) prototype
+  val (@->): 'p Type.t -> ('a, 'b) prototype -> ('a, 'p -> 'b) prototype
+  val declare: string -> (Val.t, 'b) prototype -> (Val.t, 'b) interface
 
   val compare: t -> t -> int
 end
