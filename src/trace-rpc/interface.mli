@@ -1,3 +1,4 @@
+(* TODO: hide these constructors when apply is implemented *)
 type (_,_) prototype =
   | BaseType : ('a, 'a -> 'a) prototype
   | ParamType : ('t Type.t * ('a, 'b) prototype) -> ('a, ('t -> 'b)) prototype
@@ -31,6 +32,12 @@ module type OPERATION = sig
   type t = | B: (Val.t, 'a) NamedOp.t -> t
   type 'a matched_implementation = (Val.t, 'a) NamedOp.t * 'a
   type boxed_mi = | E: 'a matched_implementation -> boxed_mi
+
+  (** Box a heterogeneous list to a serialisable form *)
+  val flatten_params: (Val.t, 'a) params -> Type.Boxed.t list
+
+  (* Take a list of parameters and apply them to a function *)
+  val pass_params: ?src:Logs.src -> boxed_mi -> Type.Boxed.box list -> Val.t -> Val.t
 
   (* val apply: ('v,'a) interface -> 'a -> (('v,'a) interface * ('v, 'a) params) *)
   val return: ('a, 'a -> 'a) prototype

@@ -16,6 +16,7 @@ module NamedOp = struct
   let typ {name = _; typ = t} = t
 end
 
+(* TODO: Use open records instead? *)
 type (_,_) interface =
   | Unary : ('v,'a) NamedOp.t -> ('v,'a) interface
   | Complex : (('v,'a) NamedOp.t * ('v, 'b) interface) -> ('v, 'a * 'b) interface
@@ -25,10 +26,12 @@ type ('v,'a) implementation = ('v,'a) interface * 'a
 module type OPERATION = sig
   module Val: Irmin.Contents.S
 
-
   type t = | B: (Val.t, 'a) NamedOp.t -> t
   type 'a matched_implementation = (Val.t, 'a) NamedOp.t * 'a
   type boxed_mi = | E: 'a matched_implementation -> boxed_mi
+
+  val flatten_params: (Val.t, 'a) params -> Type.Boxed.t list
+  val pass_params: ?src:Logs.src -> boxed_mi -> Type.Boxed.box list -> Val.t -> Val.t
 
   (* val apply: ('v,'a) interface -> 'a -> (('v,'a) interface * ('v, 'a) params) *)
   val return: ('a, 'a -> 'a) prototype
@@ -44,6 +47,43 @@ module MakeOperation(T: Irmin.Contents.S): OPERATION with module Val = T = struc
   type t = | B: (Val.t, 'a) NamedOp.t -> t
   type 'a matched_implementation = (Val.t, 'a) NamedOp.t * 'a
   type boxed_mi = | E: 'a matched_implementation -> boxed_mi
+
+  let rec flatten_params: type v a. (v, a) params -> Type.Boxed.t list = fun ps ->
+    match ps with
+    | Unit -> []
+    | Param (typ, p, ps) -> ((Type.Boxed.box typ p)::flatten_params(ps))
+
+  (* We have a function of type (param -> ... -> param -> val -> val).
+     Here we take the parameters that were passed as part of the RPC and recursively apply them
+     to the function implementation until we are left with a function of type (val -> val). *)
+  let pass_params ?src boxed_mi params =
+    match boxed_mi with
+    | E matched_impl ->
+      let (unboxed, func) = matched_impl in
+      let func_type = NamedOp.typ unboxed in
+
+      (* We take a function type and a function _of that type_, and recursively apply parameters
+         to the function until it reaches 'BaseType', i.e. val -> val *)
+      let rec aux: type a.
+        (Val.t, a) prototype
+        -> a
+        -> Type.Boxed.t list
+        -> (Val.t -> Val.t) = fun func_type func params ->
+
+        match func_type with
+        | BaseType -> (Logs.debug ?src (fun m -> m "Reached base type"); match params with
+          | [] -> (fun x ->
+              Logs.debug ?src (fun m -> m "Executing val -> val level function");
+              let v = func x in
+              Logs.debug ?src (fun m -> m "Function execution complete");
+              v)
+          | _ -> raise @@ Exceptions.Malformed_params "Too many parameters")
+
+        | ParamType (typ, nested_type) -> (Logs.debug ?src (fun m -> m "Nested type"); match params with
+          | (x::xs) -> aux nested_type (func (Type.Boxed.unbox typ x)) xs
+          | [] -> raise @@ Exceptions.Malformed_params "Not enough parameters")
+
+      in aux func_type func params
 
   let return = BaseType
   let (@->) p f = ParamType (p, f)
@@ -179,7 +219,4 @@ module type IMPL = sig
   type shape
   val api: shape MakeImplementation(Val).t
 end
-
-
-
 
