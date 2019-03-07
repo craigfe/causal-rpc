@@ -32,6 +32,7 @@ let stress_test () =
         >|= List.sort compare
         >>= fun actual -> Lwt.return (List.map ((+) n) values)
         >>= fun expected -> Lwt.return (Alcotest.(check (list int)) "Multiple request on many keys concurrently" expected actual)
+        >>= fun () -> Logs_lwt.app (fun m -> m "Iteration %i complete" n)
         >>= fun () -> inner (n + 1) map
       in inner 1 m
 

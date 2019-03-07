@@ -37,15 +37,7 @@ module Implementation: Interface.IMPL with type Val.t = int64 = struct
 
   let identity x = x
   let increment x = Int64.add Int64.one x
-  (* let sleep f x = (Unix.sleepf f; increment x) *)
-
-  let sleep f _ =
-    let imax = Pervasives.int_of_float @@ f *. 10_000_000. in
-    let rec inner n acc = match n with
-      | 0 -> acc
-      | n -> inner (n-1) (acc + n) in
-
-    Int64.of_int(inner imax 0)
+  let sleep f x = (Unix.sleepf f; increment x)
 
   let multiply = Int64.mul
   let complex i32 i64 s () = match Int64.of_string_opt s with
@@ -58,13 +50,12 @@ module Implementation: Interface.IMPL with type Val.t = int64 = struct
          ((int64 -> O.Val.t -> O.Val.t) *
           (int32 -> int64 -> string -> unit -> O.Val.t -> O.Val.t)))))
 
-  let api = define I.(
-      (identity_op, identity)
-      @ (increment_op, increment)
-      @ (sleep_op, sleep)
-      @ (multiply_op, multiply)
-      @ (complex_op, complex)
-    )
+  let api = define
+      I.((identity_op, identity)
+         @ (increment_op, increment)
+         @ (sleep_op, sleep)
+         @ (multiply_op, multiply)
+         @ (complex_op, complex))
 end
 
 module IntPair (B: Backend.MAKER) (G: Irmin_git.G) = struct
