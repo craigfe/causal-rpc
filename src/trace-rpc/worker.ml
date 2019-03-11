@@ -72,11 +72,11 @@ module Make
     if String.sub uri 0 7 = "file://" then
       let dir = String.sub uri 7 (String.length uri - 7) in
       Irmin_git.config dir
-      |> IrminStore.Repo.v
-      >>= fun repo -> IrminStore.of_branch repo branch
-      >|= Irmin.remote_store (module IrminStore)
+      |> Store.IrminStore.Repo.v
+      >>= fun repo -> Store.IrminStore.of_branch repo branch
+      >|= Irmin.remote_store (module Store.IrminStore)
     else
-      Lwt.return (B.remote_of_uri uri)
+      Lwt.return (Store.B.remote_of_uri uri)
 
   let directory_from_name ?src name =
     let dir = "/tmp/irmin/" ^ name in
@@ -86,7 +86,7 @@ module Make
 
   let get_tasks_opt ~random_selection ~batch_size working_br remote worker_name = (* TODO: implement this all in a transaction *)
 
-    IrminStore.find working_br ["task_queue"]
+    Store.IrminStore.find working_br ["task_queue"]
     >>= fun q -> match q with
     | Some Task_queue (_::_ as todo, pending) ->
 
@@ -111,7 +111,7 @@ module Make
           | _::_::_ -> Fmt.strf "Consume [%a]" (Fmt.list ~sep:Fmt.comma pp_task) t
           | _       -> Fmt.strf "Consume %a"   (Fmt.list ~sep:Fmt.comma pp_task) t) in
 
-      IrminStore.set working_br ~info:(B.make_info ~author:worker_name "%a" pp_commit selected)
+      Store.IrminStore.set working_br ~info:(Store.B.make_info ~author:worker_name "%a" pp_commit selected)
         ["task_queue"] (Task_queue (remaining, selected @ pending))
 
       >>= fun res -> (match res with
@@ -126,27 +126,28 @@ module Make
 
 
   (* Take a store_tree and remove a pending task from it *)
-  let remove_pending_task (task: Task_queue.task) (store_tree: IrminStore.tree): IrminStore.tree Lwt.t =
+  let remove_pending_task (task: Task_queue.task) (store_tree: Store.IrminStore.tree): Store.IrminStore.tree Lwt.t =
+    let open Store in
 
-    IrminStore.Tree.get store_tree ["task_queue"]
+    Store.IrminStore.Tree.get store_tree ["task_queue"]
     >>= (fun q -> match q with
         | Task_queue tq -> Lwt.return tq
         | _ -> Lwt.fail Internal_type_error)
-    >|= (fun (todo, pending) -> Store.Task_queue
+    >|= (fun (todo, pending) -> Task_queue
             (todo, List.filter (fun t -> t <> task) pending))
-    >>= IrminStore.Tree.add store_tree ["task_queue"]
+    >>= Store.IrminStore.Tree.add store_tree ["task_queue"]
 
 
-  let remove_pending_tasks (tasks: Task_queue.task list) (store_tree: IrminStore.tree): IrminStore.tree Lwt.t =
+  let remove_pending_tasks (tasks: Task_queue.task list) (store_tree: Store.IrminStore.tree): Store.IrminStore.tree Lwt.t =
     Lwt_list.fold_right_s remove_pending_task tasks store_tree
 
 
-  let perform_task ?src (store_tree: IrminStore.tree) (task:Task_queue.task): (Task_queue.task * Value.t) Lwt.t =
+  let perform_task ?src (store_tree: Store.IrminStore.tree) (task:Task_queue.task): (Task_queue.task * Value.t) Lwt.t =
     let boxed_mi () = (match I.find_operation_opt task.name Impl.api with
         | Some operation -> operation
         | None -> invalid_arg "Operation not found") in
 
-    IrminStore.Tree.find store_tree ["vals"; task.key]
+    Store.IrminStore.Tree.find store_tree ["vals"; task.key]
     >>= (fun cont -> (match cont with
         | Some Value v -> Lwt.return v
         | Some _ -> Lwt.fail Internal_type_error
@@ -157,9 +158,9 @@ module Make
 
 
   (* Take a store tree and list of tasks and return the tree with the tasks performed *)
-  let perform_tasks ?src (tasks:Task_queue.task list) (store_tree: IrminStore.tree): IrminStore.tree Lwt.t =
+  let perform_tasks ?src (tasks:Task_queue.task list) (store_tree: Store.IrminStore.tree): Store.IrminStore.tree Lwt.t =
     let add_task_result ((t, v): Task_queue.task * Value.t) tree =
-      IrminStore.Tree.add tree ["vals"; t.key] (Value v) in
+      Store.IrminStore.Tree.add tree ["vals"; t.key] (Value v) in
 
     Lwt_list.map_p (perform_task ?src store_tree) tasks
     >>= fun tasks -> Lwt_list.fold_right_s add_task_result tasks store_tree
@@ -172,7 +173,7 @@ module Make
       ?src repo client job worker_name =
 
     (* Checkout the branch *)
-    let map_name = JobQueue.Impl.job_to_string job in
+    let map_name = Store.JobQueue.Impl.job_to_string job in
     let work_br_name = worker_name in
 
     let pp_task = Fmt.of_to_string (fun (t:Task_queue.task) -> Fmt.strf "<%s> on key %s" t.name t.key) in
@@ -184,22 +185,22 @@ module Make
     >>= fun input_remote -> upstream client work_br_name
     >>= fun output_remote ->
 
-    IrminStore.Branch.remove repo work_br_name (* We may have used this worker branch earlier. Delete it here to avoid problems *)
-    >>= fun () -> IrminStore.of_branch repo map_name
+    Store.IrminStore.Branch.remove repo work_br_name (* We may have used this worker branch earlier. Delete it here to avoid problems *)
+    >>= fun () -> Store.IrminStore.of_branch repo map_name
 
     (* We pull remote work into local_br, and perform the work on working_br. The remote then
        merges our work back into origin/local_br, completing the cycle. NOTE: The name of
        working_br must be unique, or pushed work overwrites others' and all hell breaks loose. *)
     >>= fun local_br -> Sync.pull_exn local_br input_remote `Set
-    >>= fun () -> IrminStore.clone ~src:local_br ~dst:work_br_name
+    >>= fun () -> Store.IrminStore.clone ~src:local_br ~dst:work_br_name
     >>= fun working_br ->
 
     let rec task_exection_loop () =
-      let info = B.make_info ~author:"worker_ERROR" "This should always be a fast-forward" in
+      let info = Store.B.make_info ~author:"worker_ERROR" "This should always be a fast-forward" in
 
       Sync.pull_exn local_br input_remote (`Merge info)
-      >>= fun () -> IrminStore.merge_with_branch working_br
-        ~info:(B.make_info ~author:worker_name "Updating world-view on %s" map_name)
+      >>= fun () -> Store.IrminStore.merge_with_branch working_br
+        ~info:(Store.B.make_info ~author:worker_name "Updating world-view on %s" map_name)
         map_name
       >>= Misc.handle_merge_conflict work_br_name map_name
 
@@ -230,7 +231,7 @@ module Make
           >>= fun () -> Logs_lwt.info ?src (fun m -> m "Starting to perform %a" fmt_tasklist ts)
 
           (* We get the trees with the tasks having been a) performed to the map and b) removed from the pending queue *)
-          >>= fun () -> IrminStore.get_tree working_br []
+          >>= fun () -> Store.IrminStore.get_tree working_br []
           >>= perform_tasks ts
           >>= remove_pending_tasks ts
 
@@ -239,8 +240,8 @@ module Make
 
           (* Now perform the commit and push to the remote. This commit should never be empty. But for
              debugging purposes we show empty commits *)
-          >>= fun result_tree -> IrminStore.set_tree ~allow_empty:true
-            ~info:(B.make_info ~author:worker_name "%a" pp_commit ts)
+          >>= fun result_tree -> Store.IrminStore.set_tree ~allow_empty:true
+            ~info:(Store.B.make_info ~author:worker_name "%a" pp_commit ts)
             working_br [] result_tree
 
           >>= fun res -> (match res with
@@ -253,7 +254,7 @@ module Make
               | Error pe -> Lwt.fail @@ Push_error pe)
 
           >>= fun () -> Logs_lwt.info ?src @@ fun m -> m "Changes pushed to branch %s" map_name
-          >>= B.yield
+          >>= Store.B.yield
           >>= task_exection_loop
         end
     in task_exection_loop ()
@@ -307,12 +308,12 @@ module Make
     (* TODO: prevent this from growing infinitely? *)
     let module SS = Set.Make(String) in
     let seen_before = ref SS.empty in
-    let job_to_string = JobQueue.Impl.job_to_string in
+    let job_to_string = Store.JobQueue.Impl.job_to_string in
 
     Logs_lwt.app ?src (fun m -> m "Initialising worker with name %s for client %s" name client)
     >>= fun () -> Logs_lwt.app ?src (fun m -> m "Worker repo contained in %s" dir)
-    >>= fun () -> IrminStore.Repo.v config
-    >>= fun s -> IrminStore.master s
+    >>= fun () -> Store.IrminStore.Repo.v config
+    >>= fun s -> Store.IrminStore.master s
     >>= fun master -> Logs_lwt.debug ?src (fun m -> m "Store constructed")
 
     >>= fun () -> upstream client "master"
@@ -326,8 +327,8 @@ module Make
        | None -> Lwt.return_unit)
 
       (* Pull and check the map_request file for queued jobs *)
-      >>= fun () -> Sync.pull_exn master upstr (`Merge (B.make_info ~author:"worker_ERROR" "This should always be a fast-forward"))
-      >>= fun () -> JobQueue.Impl.peek_opt master
+      >>= fun () -> Sync.pull_exn master upstr (`Merge (Store.B.make_info ~author:"worker_ERROR" "This should always be a fast-forward"))
+      >>= fun () -> Store.JobQueue.Impl.peek_opt master
       >>= fun j -> Logs_lwt.debug (fun m -> m "Branches seen before: %a"
                                       (Fmt.brackets @@ Fmt.list ~sep:Fmt.comma Fmt.string) (SS.elements !seen_before))
       >>= fun () -> (match j with
@@ -344,9 +345,9 @@ module Make
 
           | None ->
             Logs_lwt.info ?src (fun m -> m "Found no map request. Sleeping for %f seconds." poll_freq)
-            >>= fun () -> B.sleep poll_freq)
+            >>= fun () -> Store.B.sleep poll_freq)
 
-      >>= B.yield
+      >>= Store.B.yield
       >>= inner
 
     in inner ()

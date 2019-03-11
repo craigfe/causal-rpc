@@ -9,26 +9,14 @@ module type S = sig
   type t
   (** The type of maps from type [key] to type [value] *)
 
-  module Description: Interface.DESC
-  module Value = Description.Val
-
-  (* The contents of the Irmin store are determined by the store module*)
-  module Contents: Irmin.Contents.S with type t = Value.t Store.contents
-  module B: Backend.S
-  module IrminStore: Irmin_git.S
-    with type key = string list
-     and type step = string
-     and type contents = Contents.t
-     and type branch = string
-
-  module Sync: Irmin.SYNC with type db = IrminStore.t
-  module JobQueue: Store.JOB_QUEUE with module Store = IrminStore
-  module Operation: Interface.OPERATION with module Val = Value
+  module Store: Store.S
+  module Sync = Store.IrminSync
+  module Value = Store.Value
 
   type 'a params = (Value.t, 'a) Interface.params
 
   exception Internal_type_error
-  exception Store_error of IrminStore.write_error
+  exception Store_error of Store.IrminStore.write_error
 
   val of_store: Sync.db -> t
   (** Return the map corresponding to an underlying store representation *)
@@ -81,23 +69,5 @@ module type S = sig
       replaced by the result of applying _a_ function to [a] *)
 end
 
-module Make
-    (BackendMaker: Backend.MAKER)
-    (GitBackend: Irmin_git.G)
-    (Desc: Interface.DESC)
-    (JQueueMake: functor
-       (Val: Irmin.Contents.S)
-       (B: Backend.S
-        with type Store.key = Irmin.Path.String_list.t
-         and type Store.step = string
-         and module Store.Key = Irmin.Path.String_list
-         and type Store.contents = Val.t Store.contents
-         and type Store.branch = string)
-       -> (Store.JOB_QUEUE with module Store = B.Store)): S
-  with module Description = Desc
-   and module Operation = Interface.MakeOperation(Desc.Val)
-(** Functor building an implementation of the map structure given:
-     - a value for the map to contain
-     - a set of operations on that type
-     - a queue type
-     - a job queue implementation *)
+module Make (Store: Store.S)
+    : S with module Store = Store

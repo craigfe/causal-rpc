@@ -8,23 +8,13 @@ module type S = sig
 
   type t
 
-  module Description: Interface.DESC
-  module Value = Description.Val
-  module Contents: Irmin.Contents.S with type t = Value.t Store.contents
-  module B: Backend.S
-  module IrminStore: Irmin_git.S
-    with type key = Irmin.Path.String_list.t
-     and type step = string
-     and module Key = Irmin.Path.String_list
-     and type contents = Contents.t
-     and type branch = string
-
-  module Sync: Irmin.SYNC with type db = IrminStore.t
-  module JobQueue: Store.JOB_QUEUE with module Store = IrminStore
-  module Operation: Interface.OPERATION with module Val = Value
+  module Store: Store.S
+  module Sync = Store.IrminSync
+  module Value = Store.Value
 
   exception Internal_type_error
-  exception Store_error of IrminStore.write_error
+  exception Store_error of Store.IrminStore.write_error
+
   type 'a params = (Value.t, 'a) Interface.params
 
   val of_store: Sync.db -> t
@@ -43,31 +33,15 @@ module type S = sig
   val map: ?timeout:float -> (Value.t,'a,'p) Interface.NamedOp.t -> 'a params -> t -> t Lwt.t
 end
 
-module Make
-    (BackendMaker: Backend.MAKER)
-    (GitBackend: Irmin_git.G)
-    (Desc: Interface.DESC)
-    (JQueueMake: functor
-       (Val: Irmin.Contents.S)
-       (B: Backend.S
-        with type Store.key = Irmin.Path.String_list.t
-         and type Store.step = string
-         and module Store.Key = Irmin.Path.String_list
-         and type Store.contents = Val.t Store.contents
-         and type Store.branch = string)
-       -> (Store.JOB_QUEUE with module Store = B.Store)
-    ): S
-  with module Description = Desc
-   and module Operation = Interface.MakeOperation(Desc.Val) = struct
+module Make (Store: Store.S)
+  : S with module Store = Store = struct
 
-  module Description = Desc
-  module Value = Description.Val
-  module Contents = Store.MakeContents(Desc.Val)
-  module B = BackendMaker(GitBackend)(Contents)
-  module IrminStore = B.Store
-  module Sync = Irmin.Sync(IrminStore)
-  module JobQueue = JQueueMake(Desc.Val)(B)
-  module Operation = Interface.MakeOperation(Desc.Val)
+  module Store = Store
+  module Sync = Store.IrminSync
+  module Value = Store.Value
+
+  (* Internal modules *)
+  module IrminStore = Store.IrminStore
 
   type key = string
   type value = Value.t
@@ -119,7 +93,7 @@ module Make
 
     IrminStore.set
       ~allow_empty:true
-      ~info:(B.make_info ~author:"client" "%s" message)
+      ~info:(Store.B.make_info ~author:"client" "%s" message)
       l
       ["vals"; key]
       (Value value)
@@ -153,7 +127,7 @@ module Make
 
     >>= fun tree -> IrminStore.set_tree
       ~allow_empty:true
-      ~info:(B.make_info ~author:"client" "%s" message)
+      ~info:(Store.B.make_info ~author:"client" "%s" message)
       l ["vals"] tree
 
     >>= fun res -> (match res with
@@ -214,7 +188,7 @@ module Make
   let generate_task_queue: type a p. (value, a, p) Interface.NamedOp.t -> a params -> t -> value contents Lwt.t = fun operation params map ->
     let open Task_queue in
     let name = Interface.NamedOp.name operation in
-    let param_list = Operation.flatten_params params in
+    let param_list = Store.Operation.flatten_params params in
 
     keys map
     >|= List.map (fun key -> {name; params = param_list; key})
@@ -223,7 +197,7 @@ module Make
     >|= fun () -> Task_queue (ops, []) (* Initially there are no pending operations *)
 
   let set_task_queue q m =
-    IrminStore.set ~info:(B.make_info ~author:"map" "Specify workload")
+    IrminStore.set ~info:(Store.B.make_info ~author:"map" "Specify workload")
       m ["task_queue"] q
 
     >>= fun res -> match res with
@@ -244,12 +218,12 @@ module Make
     >>= fun map_name -> Logs_lwt.app (fun m -> m "Map operation issued. Branch name %s" map_name)
 
     (* Push the job onto the job queue *)
-    >>= fun () -> JobQueue.Impl.push (JobQueue.Impl.job_of_string map_name) l
+    >>= fun () -> Store.JobQueue.Impl.push (Store.JobQueue.Impl.job_of_string map_name) l
 
     (* Create a new branch to isolate the operation *)
     >>= fun () -> IrminStore.clone ~src:l ~dst:map_name
     >>= fun branch -> IrminStore.merge_with_branch l
-      ~info:(B.make_info ~author:"map" "Merged") IrminStore.Branch.master
+      ~info:(Store.B.make_info ~author:"map" "Merged") IrminStore.Branch.master
     >>= Misc.handle_merge_conflict IrminStore.Branch.master map_name
 
     (* Generate and commit the task queue *)
@@ -266,7 +240,7 @@ module Make
        Note: here we don't explicitly signal the workers that are available for a
        map, so we have to watch for any changes in the repo and then filter within
        the callback. *)
-    let watch_callback (br_name: IrminStore.branch) (_: Sync.commit Irmin.diff) =
+    let watch_callback (br_name: IrminStore.branch) (_: Store.IrminStore.commit Irmin.diff) =
 
       (* Here we assume that all branches that don't start with 'map--' are worker branches
          for this map request. In future this may not always be the case *)
@@ -274,22 +248,22 @@ module Make
       else if not (String.sub br_name  0 5 |> String.equal "map--") then begin
 
         IrminStore.of_branch (IrminStore.repo l) br_name
-        >>= JobQueue.Impl.peek_opt
+        >>= Store.JobQueue.Impl.peek_opt
         >>= fun job -> (match job with
-            | Some j when String.equal map_name (JobQueue.Impl.job_to_string j) ->
+            | Some j when String.equal map_name (Store.JobQueue.Impl.job_to_string j) ->
 
               Logs_lwt.debug (fun m -> m "Resetting count due to activity on branch %s" br_name)
               >|= (fun () -> inactivity_count := 0.0; sleep_interval := !sleep_interval /. 2.)
 
               (* Merge the work from this branch *)
               >>= fun () -> IrminStore.merge_with_branch branch
-                ~info:(B.make_info ~author:"map" "Merged work from %s into %s" br_name map_name) br_name
+                ~info:(Store.B.make_info ~author:"map" "Merged work from %s into %s" br_name map_name) br_name
 
               >>= Misc.handle_merge_conflict br_name map_name
 
             | Some j -> Logs_lwt.warn
                           (fun m -> m "Woke up due to submitted work for a job %s, but the currently executing job is %s"
-                              (JobQueue.Impl.job_to_string j) map_name)
+                              (Store.JobQueue.Impl.job_to_string j) map_name)
 
             | None -> Lwt.fail @@ E.Protocol_error (Printf.sprintf "Received work on branch %s, but there is no job on this branch" br_name))
 
@@ -317,7 +291,7 @@ module Make
         task_queue_size branch
         >>= fun tq_size -> Logs_lwt.app (fun m -> m "Sleeping for a time of %f, with an inactivity count of %f. %d tasks remaining"
                                             !sleep_interval !inactivity_count tq_size)
-        >>= fun () -> B.sleep (!sleep_interval)
+        >>= fun () -> Store.B.sleep (!sleep_interval)
         >|= (fun () ->
             inactivity_count := !inactivity_count +. !sleep_interval;
             sleep_interval := !sleep_interval *. 2.)
@@ -329,20 +303,20 @@ module Make
 
     (* Merge the map branch into master *)
     >>= fun () -> IrminStore.merge_with_branch l
-      ~info:(B.make_info ~author: "map" "Job %s complete" map_name) map_name
+      ~info:(Store.B.make_info ~author: "map" "Job %s complete" map_name) map_name
     >>= Misc.handle_merge_conflict map_name IrminStore.Branch.master
 
     (* Remove the job from the job queue *)
-    >>= fun () -> JobQueue.Impl.pop l
+    >>= fun () -> Store.JobQueue.Impl.pop l
 
     (* For now, we only ever perform one map at once. Eventually, the job queue
        will need to be cleverer to avoid popping off the wrong job here *)
-    >>= fun j -> if JobQueue.Impl.job_equal j (JobQueue.Impl.job_of_string map_name)
+    >>= fun j -> if Store.JobQueue.Impl.job_equal j (Store.JobQueue.Impl.job_of_string map_name)
     then Lwt.fail_with "Didn't pop the right job!"
     else Lwt.return_unit
 
       >>= (fun _ -> Logs_lwt.app @@ fun m -> m "Map operation complete. Branch name %s" map_name)
       >|= fun () -> m
 
-  let () = B.initialise (); (* XXX *)
+  let () = Store.B.initialise (); (* XXX *)
 end

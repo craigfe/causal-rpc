@@ -58,6 +58,6 @@ module Implementation: Interface.IMPL with type Val.t = int64 = struct
 end
 
 module IntPair (B: Backend.MAKER) (G: Irmin_git.G) = struct
-  module IntMap = Map.Make(B)(G)(Definition)(Job_queue.Make)
+  module IntMap = Map.Make(Store.Make(B)(G)(Definition)(Job_queue.Make))
   module IntWorker = Worker.Make(IntMap)(Implementation)
 end
