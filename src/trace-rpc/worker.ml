@@ -1,6 +1,6 @@
 open Lwt.Infix
 open Task_queue
-open Store
+open Contents
 
 let random_name ?src () =
   Misc.generate_rand_string ~length:8 ()

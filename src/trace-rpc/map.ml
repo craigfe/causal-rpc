@@ -1,6 +1,6 @@
 open Lwt.Infix
 module E = Exceptions
-open Store
+open Contents
 
 module type S = sig
 
@@ -185,7 +185,7 @@ module Make (Store: Store.S)
     get_task_queue branch
     >|= fun (a, b) -> (List.length a) + (List.length b)
 
-  let generate_task_queue: type a p. (value, a, p) Interface.NamedOp.t -> a params -> t -> value contents Lwt.t = fun operation params map ->
+  let generate_task_queue: type a p. (value, a, p) Interface.NamedOp.t -> a params -> t -> value Contents.t Lwt.t = fun operation params map ->
     let open Task_queue in
     let name = Interface.NamedOp.name operation in
     let param_list = Store.Operation.flatten_params params in
