@@ -316,8 +316,12 @@ module Make
               >|= (fun () -> seen_before := SS.add br_name !seen_before)
               >>= fun () -> Logs_lwt.info ?src (fun m -> m "Finished handling request on branch %s" br_name)
 
-          | Some (Job.Rpc _) | None ->
-            Logs_lwt.info ?src (fun m -> m "Found no map request. Sleeping for %f seconds." poll_freq)
+          | Some (Job.Rpc _) ->
+            Logs_lwt.info ?src (fun m -> m "RPC job found. Sleeping for %f seconds." poll_freq)
+            >>= fun () -> Store.B.sleep poll_freq
+
+          | None ->
+            Logs_lwt.info ?src (fun m -> m "Job queue is empty. Sleeping for %f seconds." poll_freq)
             >>= fun () -> Store.B.sleep poll_freq)
 
       >>= Store.B.yield
