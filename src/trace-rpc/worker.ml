@@ -281,7 +281,7 @@ module Make
     >>= fun s -> Store.IrminStore.master s
     >>= fun master -> Logs_lwt.debug ?src (fun m -> m "Store constructed")
 
-    >>= fun () -> upstream client "master"
+    >>= fun () -> Store.upstream client "master"
     >>= fun upstr ->
 
     let rec inner () =
