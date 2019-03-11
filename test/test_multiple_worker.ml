@@ -2,7 +2,7 @@ open Lwt.Infix
 open Trace_rpc
 open Intmap
 
-module I = IntPair (Trace_rpc_unix.Make)(Irmin_unix.Git.Mem.G)
+module I = IntPair (Trace_rpc_unix.Make)(Helpers.GitBackend)
 open I
 
 let worker_pool ?batch_size ?two_phase switch n dir =

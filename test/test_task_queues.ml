@@ -1,10 +1,5 @@
 open Lwt.Infix
-(* open Trace_rpc *)
 open Trace_rpc.Task_queue
-(* open Intmap *)
-
-(* module I = IntPair (Trace_rpc_unix.Make)(Irmin_unix.Git.Mem.G)
- * open I *)
 
 type conflict = [
   | `Conflict of string
