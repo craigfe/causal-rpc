@@ -1,5 +1,5 @@
 open Lwt.Infix
-open Map
+open Store
 
 exception Empty_queue
 
@@ -9,10 +9,10 @@ module Make
         with type Store.key = Irmin.Path.String_list.t
          and type Store.step = string
          and module Store.Key = Irmin.Path.String_list
-         and type Store.contents = Val.t Map.contents
+         and type Store.contents = Val.t Store.contents
          and type Store.branch = string)
 
-  : Map.JOB_QUEUE with module Store = B.Store = struct
+  : Store.JOB_QUEUE with module Store = B.Store = struct
 
   type t = string list
   type job = string
@@ -39,7 +39,7 @@ module Make
     let of_map m =
       Store.find m ["job_queue"]
       >|= fun q -> match q with
-      | Some Map.Job_queue js -> js
+      | Some Job_queue js -> js
       | Some _ -> invalid_arg "Can't happen by design"
       | None -> []
 

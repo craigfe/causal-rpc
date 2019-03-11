@@ -2,34 +2,6 @@
 (** A task is an operation, a list of parameters and a key specifying the value
     on which to perform the operation *)
 
-type job = string
-type job_queue = job list
-
-type 'v contents =
-  | Value of 'v
-  | Task_queue of Task_queue.t
-  | Job_queue of job_queue
-
-module type JOB_QUEUE = sig
-  module Store: Irmin.KV
-
-  module type IMPL = sig
-    val job_of_string: string -> job
-    val job_to_string: job -> string
-    val job_equal: job -> job -> bool
-
-    val is_empty: Store.t -> bool Lwt.t
-    val push: job -> Store.t -> unit Lwt.t
-    val pop: Store.t -> job Lwt.t
-    val peek_opt: Store.t -> job option Lwt.t
-  end
-
-  module Impl: IMPL
-end
-
-module MakeContents (Val: Irmin.Contents.S): Irmin.Contents.S
-  with type t = Val.t contents
-
 module type S = sig
   type key = string
   (** The type of the map keys *)
@@ -39,22 +11,24 @@ module type S = sig
 
   module Description: Interface.DESC
   module Value = Description.Val
-  module Contents: Irmin.Contents.S with type t = Value.t contents
+
+  (* The contents of the Irmin store are determined by the store module*)
+  module Contents: Irmin.Contents.S with type t = Value.t Store.contents
   module B: Backend.S
-  module Store: Irmin_git.S
+  module IrminStore: Irmin_git.S
     with type key = string list
      and type step = string
      and type contents = Contents.t
      and type branch = string
 
-  module Sync: Irmin.SYNC with type db = Store.t
-  module JobQueue: JOB_QUEUE with module Store = Store
+  module Sync: Irmin.SYNC with type db = IrminStore.t
+  module JobQueue: Store.JOB_QUEUE with module Store = IrminStore
   module Operation: Interface.OPERATION with module Val = Value
 
   type 'a params = (Value.t, 'a) Interface.params
 
   exception Internal_type_error
-  exception Store_error of Store.write_error
+  exception Store_error of IrminStore.write_error
 
   val of_store: Sync.db -> t
   (** Return the map corresponding to an underlying store representation *)
@@ -117,9 +91,9 @@ module Make
         with type Store.key = Irmin.Path.String_list.t
          and type Store.step = string
          and module Store.Key = Irmin.Path.String_list
-         and type Store.contents = Val.t contents
+         and type Store.contents = Val.t Store.contents
          and type Store.branch = string)
-       -> (JOB_QUEUE with module Store = B.Store)): S
+       -> (Store.JOB_QUEUE with module Store = B.Store)): S
   with module Description = Desc
    and module Operation = Interface.MakeOperation(Desc.Val)
 (** Functor building an implementation of the map structure given:
