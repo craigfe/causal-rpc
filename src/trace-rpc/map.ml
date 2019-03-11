@@ -310,11 +310,12 @@ module Make (Store: Store.S)
     (* For now, we only ever perform one map at once. Eventually, the job queue
        will need to be cleverer to avoid popping off the wrong job here *)
     >>= fun j -> (match j with
-    | Job.MapJob m when m = map_name -> Lwt.return_unit
-    | _ -> Lwt.fail_with (Fmt.strf "Expected to pop %a, but actually popped %a" Job.pp (Job.MapJob map_name) Job.pp j))
+        | Ok (Job.MapJob m) when m = map_name -> Lwt.return_unit
+        | Ok j -> Lwt.fail_with (Fmt.strf "Expected to pop %a, but actually popped %a" Job.pp (Job.MapJob map_name) Job.pp j)
+        | Error msg -> Lwt.fail_with (Fmt.strf "Error <%s> when attempting to remove %a from the job queue" msg Job.pp (Job.MapJob map_name)))
 
-      >>= (fun _ -> Logs_lwt.app @@ fun m -> m "Map operation complete. Branch name %s" map_name)
-      >|= fun () -> m
+    >>= (fun _ -> Logs_lwt.app @@ fun m -> m "Map operation complete. Branch name %s" map_name)
+    >|= fun () -> m
 
   (* This is the main server process *)
   let start m =
@@ -325,6 +326,10 @@ module Make (Store: Store.S)
     let watch_callback (br_name: IrminStore.branch) (_: IrminStore.commit Irmin.diff) =
       IrminStore.of_branch (IrminStore.repo l) br_name
       >>= fun local -> Store.JobQueue.Impl.pop local
+      >>= fun result -> (match result with
+      | Ok job -> Lwt.return job
+      | Error msg -> Lwt.fail_with (Fmt.strf "Error <%s> when attempting to pop from job queue on branch %s" msg br_name))
+
       >>= fun job -> (match job with
           | Job.Rpc (t, remote) ->
             let boxed_mi () = (match I.find_operation_opt t.name Impl.api with

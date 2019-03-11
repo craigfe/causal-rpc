@@ -12,7 +12,7 @@ module type JOB_QUEUE = sig
   module type IMPL = sig
     val is_empty: Store.t -> bool Lwt.t
     val push: Job.t -> Store.t -> unit Lwt.t
-    val pop: Store.t -> Job.t Lwt.t
+    val pop: Store.t -> (Job.t, string) result Lwt.t
     val pop_silent: Store.t -> (Job.t * Job.t list) Lwt.t
     val peek_opt: Store.t -> Job.t option Lwt.t
   end

@@ -18,7 +18,7 @@ module Make
   module type IMPL = sig
     val is_empty: Store.t -> bool Lwt.t
     val push: Job.t -> Store.t -> unit Lwt.t
-    val pop: Store.t -> Job.t Lwt.t
+    val pop: Store.t -> (Job.t, string) result Lwt.t
     val pop_silent: Store.t -> (Job.t * Job.t list) Lwt.t
     val peek_opt: Store.t -> Job.t option Lwt.t
   end
@@ -55,9 +55,9 @@ module Make
           ["job_queue"]
           (Job_queue js)
         >|= fun res -> (match res with
-        | Ok () -> j
-        | Error _ -> invalid_arg "some error")
-      | [] -> raise Empty_queue
+        | Ok () -> Ok j
+        | Error _ -> Error "Store_error")
+      | [] -> Lwt.return (Error "Queue_empty")
 
     let pop_silent m =
       of_map m
