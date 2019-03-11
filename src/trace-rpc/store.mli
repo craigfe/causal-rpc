@@ -15,14 +15,19 @@ module type S = sig
   module IrminSync: Irmin.SYNC with type db = IrminStore.t
   module JobQueue: Contents.JOB_QUEUE with module Store = IrminStore
   module Operation: Interface.OPERATION with module Val = Value
+
+  (** Get an Irmin.store at a local or remote URI. *)
+  val upstream: uri:string -> branch:string -> Irmin.remote Lwt.t
+
+  val remove_pending_task: Task_queue.task -> IrminStore.tree -> IrminStore.tree Lwt.t
+  val remove_pending_tasks: Task_queue.task list -> IrminStore.tree -> IrminStore.tree Lwt.t
 end
 
 (** A CausalRPC store. Parameterised on:
     - a CausalRPC backend module
     - an Irmin Git implementation
     - a description of an interface
-    - a job_queue format functor
-*)
+    - a job_queue format functor *)
 module Make
     (BackendMaker: Backend.MAKER)
     (GitBackend: Irmin_git.G)
@@ -38,3 +43,4 @@ module Make
        -> (Contents.JOB_QUEUE with module Store = B.Store)): S
   with module Description = Desc
    and module Operation = Interface.MakeOperation(Desc.Val)
+   and type IrminStore.branch = string

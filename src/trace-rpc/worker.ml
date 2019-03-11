@@ -62,27 +62,10 @@ module Make
 
   exception Push_error of Sync.push_error
 
-  (** Get an Irmin.store at a local or remote URI. *)
-  let upstream uri branch =
-
-    (* It's currently necessary to manually case-split between 'local' remotes
-       using the file local protocol and the standard git protocol
-       https://github.com/mirage/irmin/issues/589 *)
-
-    if String.sub uri 0 7 = "file://" then
-      let dir = String.sub uri 7 (String.length uri - 7) in
-      Irmin_git.config dir
-      |> Store.IrminStore.Repo.v
-      >>= fun repo -> Store.IrminStore.of_branch repo branch
-      >|= Irmin.remote_store (module Store.IrminStore)
-    else
-      Lwt.return (Store.B.remote_of_uri uri)
-
   let directory_from_name ?src name =
     let dir = "/tmp/irmin/" ^ name in
     Logs.info ?src (fun m -> m "No directory supplied. Using default directory %s" dir);
     dir
-
 
   let get_tasks_opt ~random_selection ~batch_size working_br remote worker_name = (* TODO: implement this all in a transaction *)
 
@@ -122,25 +105,7 @@ module Make
 
     | Some Task_queue ([], _) -> Lwt.return [] (* All tasks are pending *)
     | None -> Lwt.return [] (* No task to be performed *)
-    | Some _ -> Lwt.fail Internal_type_error
-
-
-  (* Take a store_tree and remove a pending task from it *)
-  let remove_pending_task (task: Task_queue.task) (store_tree: Store.IrminStore.tree): Store.IrminStore.tree Lwt.t =
-    let open Store in
-
-    Store.IrminStore.Tree.get store_tree ["task_queue"]
-    >>= (fun q -> match q with
-        | Task_queue tq -> Lwt.return tq
-        | _ -> Lwt.fail Internal_type_error)
-    >|= (fun (todo, pending) -> Task_queue
-            (todo, List.filter (fun t -> t <> task) pending))
-    >>= Store.IrminStore.Tree.add store_tree ["task_queue"]
-
-
-  let remove_pending_tasks (tasks: Task_queue.task list) (store_tree: Store.IrminStore.tree): Store.IrminStore.tree Lwt.t =
-    Lwt_list.fold_right_s remove_pending_task tasks store_tree
-
+    | Some _ -> Lwt.fail Exceptions.Internal_type_error
 
   let perform_task ?src (store_tree: Store.IrminStore.tree) (task:Task_queue.task): (Task_queue.task * Value.t) Lwt.t =
     let boxed_mi () = (match I.find_operation_opt task.name Impl.api with
@@ -150,7 +115,7 @@ module Make
     Store.IrminStore.Tree.find store_tree ["vals"; task.key]
     >>= (fun cont -> (match cont with
         | Some Value v -> Lwt.return v
-        | Some _ -> Lwt.fail Internal_type_error
+        | Some _ -> Lwt.fail Exceptions.Internal_type_error
         | None -> Lwt.fail @@ Exceptions.Protocol_error (Printf.sprintf "Value <%s> could not be found when attempting to perform %s operation" task.key task.name)))
 
     >>= fun old_val -> E.execute_task ?src (boxed_mi ()) task.params old_val
@@ -181,8 +146,8 @@ module Make
         | _::_::_ -> Fmt.strf "Perform [%a]" (Fmt.list ~sep:Fmt.comma pp_task) t
         | _       -> Fmt.strf "Perform %a"   (Fmt.list ~sep:Fmt.comma pp_task) t) in
 
-    upstream client map_name
-    >>= fun input_remote -> upstream client work_br_name
+    Store.upstream client map_name
+    >>= fun input_remote -> Store.upstream client work_br_name
     >>= fun output_remote ->
 
     Store.IrminStore.Branch.remove repo work_br_name (* We may have used this worker branch earlier. Delete it here to avoid problems *)
@@ -233,7 +198,7 @@ module Make
           (* We get the trees with the tasks having been a) performed to the map and b) removed from the pending queue *)
           >>= fun () -> Store.IrminStore.get_tree working_br []
           >>= perform_tasks ts
-          >>= remove_pending_tasks ts
+          >>= Store.remove_pending_tasks ts
 
           (* XXX: If we use Logs_lwt here, and set the verbosity higher than info, the worker fails to push the results *)
           >|= (fun result_tree -> (Logs.info ?src @@ fun m -> m "Completed %a. Pushing to remote" fmt_tasklist ts); result_tree)

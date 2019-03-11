@@ -109,3 +109,7 @@ let reporter ppf =
 
 let set_reporter () =
   Logs.set_reporter (reporter Format.std_formatter)
+
+let check_within_tmp dir =
+  if String.sub dir 0 11 <> "/tmp/irmin/"
+  then invalid_arg ("Supplied directory (" ^ dir ^ ") must be in /tmp/irmin/");

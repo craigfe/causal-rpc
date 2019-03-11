@@ -1,3 +1,5 @@
+open Lwt.Infix
+open Contents
 
 type 'v contents = 'v Contents.t
 
@@ -16,6 +18,10 @@ module type S = sig
   module IrminSync: Irmin.SYNC with type db = IrminStore.t
   module JobQueue: Contents.JOB_QUEUE with module Store = IrminStore
   module Operation: Interface.OPERATION with module Val = Value
+
+  val upstream: uri:string -> branch:string -> Irmin.remote Lwt.t
+  val remove_pending_task: Task_queue.task -> IrminStore.tree -> IrminStore.tree Lwt.t
+  val remove_pending_tasks: Task_queue.task list -> IrminStore.tree -> IrminStore.tree Lwt.t
 end
 
 
@@ -33,7 +39,8 @@ module Make
          and type Store.branch = string)
        -> (Contents.JOB_QUEUE with module Store = B.Store)): S
   with module Description = Desc
-   and module Operation = Interface.MakeOperation(Desc.Val) = struct
+   and module Operation = Interface.MakeOperation(Desc.Val)
+   and type IrminStore.branch = string = struct
 
   module Description = Desc
   module Value = Description.Val
@@ -42,6 +49,35 @@ module Make
   module B = BackendMaker(GitBackend)(IrminContents)
   module IrminStore = B.Store
   module IrminSync = Irmin.Sync(IrminStore)
-  module JobQueue = JQueueMake(Desc.Val)(B)
+  module JobQueue = JQueueMake(Desc.Val)((B))
   module Operation = Interface.MakeOperation(Desc.Val)
+
+  let upstream ~uri ~branch =
+
+    (* It's currently necessary to manually case-split between 'local' remotes
+       using the file local protocol and the standard git protocol
+       https://github.com/mirage/irmin/issues/589 *)
+
+    if String.sub uri 0 7 = "file://" then
+      let dir = String.sub uri 7 (String.length uri - 7) in
+      Irmin_git.config dir
+      |> IrminStore.Repo.v
+      >>= fun repo -> IrminStore.of_branch repo branch
+      >|= Irmin.remote_store (module IrminStore)
+    else
+      Lwt.return (B.remote_of_uri uri)
+
+  (* Take a store_tree and remove a pending task from it *)
+  let remove_pending_task (task: Task_queue.task) (store_tree: IrminStore.tree): IrminStore.tree Lwt.t =
+    IrminStore.Tree.get store_tree ["task_queue"]
+    >>= (fun q -> match q with
+        | Task_queue tq -> Lwt.return tq
+        | _ -> Lwt.fail Exceptions.Internal_type_error)
+    >|= (fun (todo, pending) -> Task_queue
+            (todo, List.filter (fun t -> t <> task) pending))
+    >>= IrminStore.Tree.add store_tree ["task_queue"]
+
+  (* Take a store_tree and remove a list of pending tasks from it *)
+  let remove_pending_tasks (tasks: Task_queue.task list) (store_tree: IrminStore.tree): IrminStore.tree Lwt.t =
+    Lwt_list.fold_right_s remove_pending_task tasks store_tree
 end

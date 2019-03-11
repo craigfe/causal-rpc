@@ -15,7 +15,6 @@ module type S = sig
 
   type 'a params = (Value.t, 'a) Interface.params
 
-  exception Internal_type_error
   exception Store_error of Store.IrminStore.write_error
 
   val of_store: Sync.db -> t

@@ -12,7 +12,6 @@ module type S = sig
   module Sync = Store.IrminSync
   module Value = Store.Value
 
-  exception Internal_type_error
   exception Store_error of Store.IrminStore.write_error
 
   type 'a params = (Value.t, 'a) Interface.params
@@ -64,13 +63,11 @@ module Make (Store: Store.S)
   let empty ?(directory=generate_random_directory()) ?remote_uri () =
     let config = Irmin_git.config ~bare:true directory in
 
-    if String.sub directory 0 11 <> "/tmp/irmin/"
-    then invalid_arg ("Supplied directory (" ^ directory ^ ") must be in /tmp/irmin/");
+    Misc.check_within_tmp directory;
 
     (* Delete the directory if it already exists... Unsafe! *)
     let ret_code = Sys.command ("rm -rf " ^ directory) in
     if (ret_code <> 0) then invalid_arg "Unable to delete directory";
-
 
     IrminStore.Repo.v config
     >>= IrminStore.master
