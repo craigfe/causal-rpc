@@ -155,7 +155,15 @@ module Make
     (* We pull remote work into local_br, and perform the work on working_br. The remote then
        merges our work back into origin/local_br, completing the cycle. NOTE: The name of
        working_br must be unique, or pushed work overwrites others' and all hell breaks loose. *)
-    >>= fun local_br -> Sync.pull_exn local_br input_remote `Set
+    >>= fun local_br -> Sync.pull local_br input_remote `Set
+    >>= (fun r -> match r with
+        | Ok () -> Lwt.return_unit
+        | Error `Conflict msg -> Logs_lwt.err (fun m -> m "Conflict <%s> when attempting to pull remote work into local_br" msg)
+        | Error `Msg msg -> Logs_lwt.err (fun m -> m "Error message <%s> when attempting to pull remote work into local_br" msg)
+        | Error `No_head -> Logs_lwt.err (fun m -> m "No head when attempting to pull remote work into local_br")
+        | Error `Not_available -> Logs_lwt.err (fun m -> m "Not_available when attempting to pull remote work into local_br")
+      )
+
     >>= fun () -> Store.IrminStore.clone ~src:local_br ~dst:work_br_name
     >>= fun working_br ->
 
