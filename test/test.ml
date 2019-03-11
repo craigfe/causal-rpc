@@ -13,5 +13,6 @@ let () =
   Random.self_init ();
   Trace_rpc.Misc.set_reporter ();
   Logs.set_level (Some Logs.Info);
+  Printexc.record_backtrace true;
 
   Alcotest.run "trace" suite

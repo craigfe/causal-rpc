@@ -130,6 +130,12 @@ module Make
     Lwt_list.map_p (perform_task ?src store_tree) tasks
     >>= fun tasks -> Lwt_list.fold_right_s add_task_result tasks store_tree
 
+  let handle_pull_errors r = match r with
+       | Ok () -> Lwt.return_unit
+       | Error `Conflict msg -> Logs_lwt.err (fun m -> m "Conflict <%s> when attempting to pull remote work into local_br" msg)
+       | Error `Msg msg -> Logs_lwt.err (fun m -> m "Error message <%s> when attempting to pull remote work into local_br" msg)
+       | Error `No_head -> Logs_lwt.err (fun m -> m "No head when attempting to pull remote work into local_br")
+       | Error `Not_available -> Logs_lwt.err (fun m -> m "Not_available when attempting to pull remote work into local_br")
 
   let handle_request
       ~random_selection
@@ -156,13 +162,7 @@ module Make
        merges our work back into origin/local_br, completing the cycle. NOTE: The name of
        working_br must be unique, or pushed work overwrites others' and all hell breaks loose. *)
     >>= fun local_br -> Sync.pull local_br input_remote `Set
-    >>= (fun r -> match r with
-        | Ok () -> Lwt.return_unit
-        | Error `Conflict msg -> Logs_lwt.err (fun m -> m "Conflict <%s> when attempting to pull remote work into local_br" msg)
-        | Error `Msg msg -> Logs_lwt.err (fun m -> m "Error message <%s> when attempting to pull remote work into local_br" msg)
-        | Error `No_head -> Logs_lwt.err (fun m -> m "No head when attempting to pull remote work into local_br")
-        | Error `Not_available -> Logs_lwt.err (fun m -> m "Not_available when attempting to pull remote work into local_br")
-      )
+    >>= handle_pull_errors
 
     >>= fun () -> Store.IrminStore.clone ~src:local_br ~dst:work_br_name
     >>= fun working_br ->
@@ -170,7 +170,9 @@ module Make
     let rec task_exection_loop () =
       let info = Store.B.make_info ~author:"worker_ERROR" "This should always be a fast-forward" in
 
-      Sync.pull_exn local_br input_remote (`Merge info)
+      Sync.pull local_br input_remote (`Merge info)
+      >>= handle_pull_errors
+
       >>= fun () -> Store.IrminStore.merge_with_branch working_br
         ~info:(Store.B.make_info ~author:worker_name "Updating world-view on %s" map_name)
         map_name
@@ -252,9 +254,7 @@ module Make
     let dir = match dir with
       | Some d -> d
       | None -> directory_from_name ?src name in
-
     let config = Irmin_git.config ~bare:false dir in
-
 
     Logs_lwt.debug (fun m -> m "Beginning to initialise worker")
 
@@ -298,7 +298,9 @@ module Make
        | None -> Lwt.return_unit)
 
       (* Pull and check the map_request file for queued jobs *)
-      >>= fun () -> Sync.pull_exn master upstr (`Merge (Store.B.make_info ~author:"worker_ERROR" "This should always be a fast-forward"))
+      >>= fun () -> Sync.pull master upstr (`Merge (Store.B.make_info ~author:"worker_ERROR" "This should always be a fast-forward"))
+      >>= handle_pull_errors
+
       >>= fun () -> Store.JobQueue.Impl.peek_opt master
       >>= fun j -> Logs_lwt.debug (fun m -> m "Branches seen before: %a"
                                       (Fmt.brackets @@ Fmt.list ~sep:Fmt.comma Fmt.string) (SS.elements !seen_before))
