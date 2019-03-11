@@ -1,4 +1,4 @@
-module GitBackend = Irmin_unix.Git.FS.G
+module GitBackend = Irmin_unix.Git.Mem.G
 
 let key_from_int n =
   let rec inner n = match n with

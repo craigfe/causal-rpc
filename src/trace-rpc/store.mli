@@ -16,11 +16,14 @@ module type S = sig
   module JobQueue: Contents.JOB_QUEUE with module Store = IrminStore
   module Operation: Interface.OPERATION with module Val = Value
 
+  exception Store_error of IrminStore.write_error
+  exception Push_error of IrminSync.push_error
+
   (** Get an Irmin.store at a local or remote URI. *)
   val upstream: uri:string -> branch:string -> Irmin.remote Lwt.t
 
-  val remove_pending_task: Task_queue.task -> IrminStore.tree -> IrminStore.tree Lwt.t
-  val remove_pending_tasks: Task_queue.task list -> IrminStore.tree -> IrminStore.tree Lwt.t
+  val remove_pending_task: Task.t -> IrminStore.tree -> IrminStore.tree Lwt.t
+  val remove_pending_tasks: Task.t list -> IrminStore.tree -> IrminStore.tree Lwt.t
 end
 
 (** A CausalRPC store. Parameterised on:

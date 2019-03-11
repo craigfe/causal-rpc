@@ -1,6 +1,5 @@
 (* Helper types and values for a CauslRPC store *)
-type job = string
-type job_queue = job list
+type job_queue = Job.t list
 
 type 'v t =
   | Value of 'v
@@ -15,14 +14,11 @@ module type JOB_QUEUE = sig
   module Store: Irmin.KV
 
   module type IMPL = sig
-    val job_of_string: string -> job
-    val job_to_string: job -> string
-    val job_equal: job -> job -> bool
-
     val is_empty: Store.t -> bool Lwt.t
-    val push: job -> Store.t -> unit Lwt.t
-    val pop: Store.t -> job Lwt.t
-    val peek_opt: Store.t -> job option Lwt.t
+    val push: Job.t -> Store.t -> unit Lwt.t
+    val pop: Store.t -> Job.t Lwt.t
+    val pop_silent: Store.t -> (Job.t * Job.t list) Lwt.t
+    val peek_opt: Store.t -> Job.t option Lwt.t
   end
 
   module Impl: IMPL

@@ -1,6 +1,7 @@
 open Lwt.Infix
 open Task_queue
 open Contents
+open Task
 
 let random_name ?src () =
   Misc.generate_rand_string ~length:8 ()
@@ -60,7 +61,6 @@ module Make
   module I = Interface.MakeImplementation(Impl.Val)
   module E = Executor.Make(I)
 
-  exception Push_error of Sync.push_error
 
   let directory_from_name ?src name =
     let dir = "/tmp/irmin/" ^ name in
@@ -89,8 +89,8 @@ module Make
           Misc.split_sequential in
 
       let (selected, remaining) = split_func batch_size todo in
-      let pp_task = Fmt.of_to_string (fun (t:Task_queue.task) -> Fmt.strf "<%s> on key %s" t.name t.key) in
-      let pp_commit = Fmt.of_to_string (fun (t:Task_queue.task list) -> match t with
+      let pp_task = Fmt.of_to_string (fun (t:Task.t) -> Fmt.strf "<%s> on key %s" t.name t.key) in
+      let pp_commit = Fmt.of_to_string (fun (t:Task.t list) -> match t with
           | _::_::_ -> Fmt.strf "Consume [%a]" (Fmt.list ~sep:Fmt.comma pp_task) t
           | _       -> Fmt.strf "Consume %a"   (Fmt.list ~sep:Fmt.comma pp_task) t) in
 
@@ -99,7 +99,7 @@ module Make
 
       >>= fun res -> (match res with
           | Ok () -> Lwt.return_unit
-          | Error se -> Lwt.fail @@ Store_error se)
+          | Error se -> Lwt.fail @@ Store.Store_error se)
 
       >|= fun () -> selected
 
@@ -107,7 +107,7 @@ module Make
     | None -> Lwt.return [] (* No task to be performed *)
     | Some _ -> Lwt.fail Exceptions.Internal_type_error
 
-  let perform_task ?src (store_tree: Store.IrminStore.tree) (task:Task_queue.task): (Task_queue.task * Value.t) Lwt.t =
+  let perform_task ?src (store_tree: Store.IrminStore.tree) (task:Task.t): (Task.t * Value.t) Lwt.t =
     let boxed_mi () = (match I.find_operation_opt task.name Impl.api with
         | Some operation -> operation
         | None -> invalid_arg "Operation not found") in
@@ -123,8 +123,8 @@ module Make
 
 
   (* Take a store tree and list of tasks and return the tree with the tasks performed *)
-  let perform_tasks ?src (tasks:Task_queue.task list) (store_tree: Store.IrminStore.tree): Store.IrminStore.tree Lwt.t =
-    let add_task_result ((t, v): Task_queue.task * Value.t) tree =
+  let perform_tasks ?src (tasks:Task.t list) (store_tree: Store.IrminStore.tree): Store.IrminStore.tree Lwt.t =
+    let add_task_result ((t, v): Task.t * Value.t) tree =
       Store.IrminStore.Tree.add tree ["vals"; t.key] (Value v) in
 
     Lwt_list.map_p (perform_task ?src store_tree) tasks
@@ -135,14 +135,13 @@ module Make
       ~random_selection
       ~batch_size
       ~two_phase
-      ?src repo client job worker_name =
+      ?src repo client map_name worker_name =
 
     (* Checkout the branch *)
-    let map_name = Store.JobQueue.Impl.job_to_string job in
     let work_br_name = worker_name in
 
-    let pp_task = Fmt.of_to_string (fun (t:Task_queue.task) -> Fmt.strf "<%s> on key %s" t.name t.key) in
-    let pp_commit = Fmt.of_to_string (fun (t:Task_queue.task list) -> match t with
+    let pp_task = Fmt.of_to_string (fun (t:Task.t) -> Fmt.strf "<%s> on key %s" t.name t.key) in
+    let pp_commit = Fmt.of_to_string (fun (t:Task.t list) -> match t with
         | _::_::_ -> Fmt.strf "Perform [%a]" (Fmt.list ~sep:Fmt.comma pp_task) t
         | _       -> Fmt.strf "Perform %a"   (Fmt.list ~sep:Fmt.comma pp_task) t) in
 
@@ -176,12 +175,12 @@ module Make
       | [] -> Logs_lwt.info ?src @@ fun m -> m "No available tasks in the task queue."
       | ts -> begin
           let task_count = List.length ts in
-          let fmt_tasklist = Fmt.brackets @@ Fmt.list ~sep:Fmt.comma Task_queue.pp_task in
+          let fmt_tasklist = Fmt.brackets @@ Fmt.list ~sep:Fmt.comma Task.pp in
 
           assert (task_count <= batch_size);
 
           (match task_count with
-           | 1             -> Logs_lwt.info ?src (fun m -> m "Attempting to consume: %a" Task_queue.pp_task (List.hd ts))
+           | 1             -> Logs_lwt.info ?src (fun m -> m "Attempting to consume: %a" Task.pp (List.hd ts))
            | n when n < 11 -> Logs_lwt.info ?src (fun m -> m "Attempting to consume %d tasks: %a" n fmt_tasklist ts)
            | n             -> Logs_lwt.info ?src (fun m -> m "Attempting to consume %d tasks" n))
 
@@ -189,7 +188,7 @@ module Make
                   Sync.push working_br output_remote (* We first tell the remote that we intend to work on this item *)
                   >>= fun res -> (match res with
                       | Ok () -> Lwt.return_unit
-                      | Error pe -> Lwt.fail @@ Push_error pe
+                      | Error pe -> Lwt.fail @@ Store.Push_error pe
                     )
                 else Lwt.return_unit)
 
@@ -211,12 +210,12 @@ module Make
 
           >>= fun res -> (match res with
               | Ok () -> Lwt.return_unit
-              | Error se -> Lwt.fail @@ Store_error se)
+              | Error se -> Lwt.fail @@ Store.Store_error se)
 
           >>= fun () -> Sync.push working_br output_remote
           >>= fun res -> (match res with
               | Ok () -> Lwt.return_unit
-              | Error pe -> Lwt.fail @@ Push_error pe)
+              | Error pe -> Lwt.fail @@ Store.Push_error pe)
 
           >>= fun () -> Logs_lwt.info ?src @@ fun m -> m "Changes pushed to branch %s" map_name
           >>= Store.B.yield
@@ -273,7 +272,6 @@ module Make
     (* TODO: prevent this from growing infinitely? *)
     let module SS = Set.Make(String) in
     let seen_before = ref SS.empty in
-    let job_to_string = Store.JobQueue.Impl.job_to_string in
 
     Logs_lwt.app ?src (fun m -> m "Initialising worker with name %s for client %s" name client)
     >>= fun () -> Logs_lwt.app ?src (fun m -> m "Worker repo contained in %s" dir)
@@ -299,16 +297,16 @@ module Make
       >>= fun () -> (match j with
 
           (* A map request has been issued *)
-          | Some br_name ->
-            if SS.mem (job_to_string br_name) !seen_before then
-              Logs_lwt.debug ?src (fun m -> m "Detected map request <%s>, but we have already seen this" (job_to_string br_name))
+          | Some (Job.MapJob br_name) ->
+            if SS.mem br_name !seen_before then
+              Logs_lwt.debug ?src (fun m -> m "Detected map request <%s>, but we have already seen this" br_name)
             else
-              Logs_lwt.info ?src (fun m -> m "Detected a new map request on branch %s" (job_to_string br_name))
+              Logs_lwt.info ?src (fun m -> m "Detected a new map request on branch %s" br_name)
               >>= fun () -> handle_request ~random_selection ~batch_size ~two_phase ?src s client br_name name
-              >|= (fun () -> seen_before := SS.add (job_to_string br_name) !seen_before)
-              >>= fun () -> Logs_lwt.info ?src (fun m -> m "Finished handling request on branch %s" (job_to_string br_name))
+              >|= (fun () -> seen_before := SS.add br_name !seen_before)
+              >>= fun () -> Logs_lwt.info ?src (fun m -> m "Finished handling request on branch %s" br_name)
 
-          | None ->
+          | Some (Job.Rpc _) | None ->
             Logs_lwt.info ?src (fun m -> m "Found no map request. Sleeping for %f seconds." poll_freq)
             >>= fun () -> Store.B.sleep poll_freq)
 

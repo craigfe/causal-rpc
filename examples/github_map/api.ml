@@ -30,5 +30,5 @@ module Implementation: Interface.IMPL with type Val.t = contents = struct
   let api = define @@ finally (commit_count_op, (fun (s, _) -> ("", Github.commit_count s)))
 end
 
-module GithubMap = Map.Make(Store.Make(Trace_rpc_unix.Make)(Irmin_unix.Git.Mem.G)(Definition)(Job_queue.Make))
+module GithubMap = Map.Make(Store.Make(Trace_rpc_unix.Make)(Irmin_unix.Git.Mem.G)(Definition)(Job_queue.Make))(Implementation)
 module GithubWorker = Worker.Make(GithubMap)(Implementation)

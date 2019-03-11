@@ -13,28 +13,17 @@ module Make
          and type Store.branch = string)
   : Contents.JOB_QUEUE with module Store = B.Store = struct
 
-  type t = string list
-  type job = string
-
   module Store = B.Store
 
   module type IMPL = sig
-    val job_of_string: string -> job
-    val job_to_string: job -> string
-    val job_equal: job -> job -> bool
-
     val is_empty: Store.t -> bool Lwt.t
-    val push: job -> Store.t -> unit Lwt.t
-    val pop: Store.t -> job Lwt.t
-    val peek_opt: Store.t -> job option Lwt.t
+    val push: Job.t -> Store.t -> unit Lwt.t
+    val pop: Store.t -> Job.t Lwt.t
+    val pop_silent: Store.t -> (Job.t * Job.t list) Lwt.t
+    val peek_opt: Store.t -> Job.t option Lwt.t
   end
 
   module Impl = struct
-    let job_of_string j = j
-    let job_to_string j = j
-
-    let job_equal a b = (a == b)
-
     let of_map m =
       Store.find m ["job_queue"]
       >|= fun q -> match q with
@@ -49,9 +38,9 @@ module Make
     let push j m = (* TODO: make this atomic *)
       of_map m
       >>= fun js -> Store.set m
-        ~info:(B.make_info ~author:"map" "Add %s to job queue" j)
+        ~info:(B.make_info ~author:"map" "Add %a to job queue" Job.pp j)
         ["job_queue"]
-        (Job_queue (j::js))
+        (Contents.Job_queue (j::js))
       >|= fun res -> match res with
       | Ok () -> ()
       | Error _ -> invalid_arg "some error"
@@ -62,12 +51,18 @@ module Make
       >>= fun js -> match js with
       | (j::js) ->
         Store.set m
-          ~info:(B.make_info ~author:"map" "Remove %s from job queue" j)
+          ~info:(B.make_info ~author:"map" "Remove %a from job queue" Job.pp j)
           ["job_queue"]
           (Job_queue js)
         >|= fun res -> (match res with
         | Ok () -> j
         | Error _ -> invalid_arg "some error")
+      | [] -> raise Empty_queue
+
+    let pop_silent m =
+      of_map m
+      >|= fun js -> match js with
+      | (j::js) -> (j, js)
       | [] -> raise Empty_queue
 
     let peek_opt m =

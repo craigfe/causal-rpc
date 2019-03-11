@@ -1,11 +1,4 @@
-
-type task = {
-  name: string;
-  params: Type.Boxed.t list;
-  key: string;
-} [@@deriving show]
-
-type t = (task list * task list) [@@deriving show]
+type t = (Task.t list * Task.t list) [@@deriving show]
 val t: t Irmin.Type.t
 val t_testable: t Alcotest.testable
 

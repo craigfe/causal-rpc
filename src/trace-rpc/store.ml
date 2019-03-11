@@ -19,9 +19,12 @@ module type S = sig
   module JobQueue: Contents.JOB_QUEUE with module Store = IrminStore
   module Operation: Interface.OPERATION with module Val = Value
 
+  exception Store_error of IrminStore.write_error
+  exception Push_error of IrminSync.push_error
+
   val upstream: uri:string -> branch:string -> Irmin.remote Lwt.t
-  val remove_pending_task: Task_queue.task -> IrminStore.tree -> IrminStore.tree Lwt.t
-  val remove_pending_tasks: Task_queue.task list -> IrminStore.tree -> IrminStore.tree Lwt.t
+  val remove_pending_task: Task.t -> IrminStore.tree -> IrminStore.tree Lwt.t
+  val remove_pending_tasks: Task.t list -> IrminStore.tree -> IrminStore.tree Lwt.t
 end
 
 
@@ -52,6 +55,9 @@ module Make
   module JobQueue = JQueueMake(Desc.Val)((B))
   module Operation = Interface.MakeOperation(Desc.Val)
 
+  exception Store_error of IrminStore.write_error
+  exception Push_error of IrminSync.push_error
+
   let upstream ~uri ~branch =
 
     (* It's currently necessary to manually case-split between 'local' remotes
@@ -68,7 +74,7 @@ module Make
       Lwt.return (B.remote_of_uri uri)
 
   (* Take a store_tree and remove a pending task from it *)
-  let remove_pending_task (task: Task_queue.task) (store_tree: IrminStore.tree): IrminStore.tree Lwt.t =
+  let remove_pending_task (task: Task.t) (store_tree: IrminStore.tree): IrminStore.tree Lwt.t =
     IrminStore.Tree.get store_tree ["task_queue"]
     >>= (fun q -> match q with
         | Task_queue tq -> Lwt.return tq
@@ -78,6 +84,6 @@ module Make
     >>= IrminStore.Tree.add store_tree ["task_queue"]
 
   (* Take a store_tree and remove a list of pending tasks from it *)
-  let remove_pending_tasks (tasks: Task_queue.task list) (store_tree: IrminStore.tree): IrminStore.tree Lwt.t =
+  let remove_pending_tasks (tasks: Task.t list) (store_tree: IrminStore.tree): IrminStore.tree Lwt.t =
     Lwt_list.fold_right_s remove_pending_task tasks store_tree
 end

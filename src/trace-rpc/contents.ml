@@ -1,8 +1,5 @@
-type job = string
-type job_queue = job list
-
-let job = Irmin.Type.string
-let job_queue = Irmin.Type.list job
+type job_queue = Job.t list
+let job_queue = Irmin.Type.list Job.t
 
 type 'v t =
   | Value of 'v
@@ -13,14 +10,11 @@ module type JOB_QUEUE = sig
   module Store: Irmin.KV
 
   module type IMPL = sig
-    val job_of_string: string -> job
-    val job_to_string: job -> string
-    val job_equal: job -> job -> bool
-
     val is_empty: Store.t -> bool Lwt.t
-    val push: job -> Store.t -> unit Lwt.t
-    val pop: Store.t -> job Lwt.t
-    val peek_opt: Store.t -> job option Lwt.t
+    val push: Job.t -> Store.t -> unit Lwt.t
+    val pop: Store.t -> Job.t Lwt.t
+    val pop_silent: Store.t -> (Job.t * Job.t list) Lwt.t
+    val peek_opt: Store.t -> Job.t option Lwt.t
   end
 
   module Impl: IMPL
@@ -34,10 +28,10 @@ module Make (Val: Irmin.Contents.S): Irmin.Contents.S
 
   let t =
     let open Irmin.Type in
-    variant "contents" (fun value task_queue branch_name -> function
+    variant "contents" (fun value task_queue job_queue -> function
         | Value v -> value v
         | Task_queue q -> task_queue q
-        | Job_queue js -> branch_name js)
+        | Job_queue js -> job_queue js)
     |~ case1 "Value" Val.t (fun v -> Value v)
     |~ case1 "Task_queue" Task_queue.t (fun q -> Task_queue q)
     |~ case1 "Job_queue" job_queue (fun js -> Job_queue js)

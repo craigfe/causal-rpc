@@ -1,4 +1,5 @@
 open Lwt.Infix
+open Trace_rpc.Task
 open Trace_rpc.Task_queue
 
 type conflict = [
@@ -10,7 +11,7 @@ let merge_conflict = Alcotest.testable pp_conflict conflict_equal
 let merge_t = Alcotest.(result t_testable merge_conflict)
 
 let mk_task k =
-  { name = "op_name"; params = []; key = k }
+  {name = "op_name"; params = []; key = k }
 
 let mk_queue (x, y) =
   ( List.sort String.compare x |> List.map mk_task

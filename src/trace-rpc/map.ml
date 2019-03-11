@@ -1,9 +1,9 @@
 open Lwt.Infix
 module E = Exceptions
 open Contents
+open Task
 
 module type S = sig
-
   type key = string
 
   type t
@@ -11,8 +11,6 @@ module type S = sig
   module Store: Store.S
   module Sync = Store.IrminSync
   module Value = Store.Value
-
-  exception Store_error of Store.IrminStore.write_error
 
   type 'a params = (Value.t, 'a) Interface.params
 
@@ -30,10 +28,12 @@ module type S = sig
   val keys: t -> key list Lwt.t
   val values: t -> Value.t list Lwt.t
   val map: ?timeout:float -> (Value.t,'a,'p) Interface.NamedOp.t -> 'a params -> t -> t Lwt.t
+  val start: t -> unit Lwt.t
 end
 
 module Make (Store: Store.S)
-  : S with module Store = Store = struct
+    (Impl: Interface.IMPL with module Val = Store.Value) : S
+  with module Store = Store = struct
 
   module Store = Store
   module Sync = Store.IrminSync
@@ -41,6 +41,8 @@ module Make (Store: Store.S)
 
   (* Internal modules *)
   module IrminStore = Store.IrminStore
+  module I = Interface.MakeImplementation(Impl.Val)
+  module Ex = Executor.Make(I)
 
   type key = string
   type value = Value.t
@@ -53,7 +55,6 @@ module Make (Store: Store.S)
   (* A map is a branch in an Irmin Key-value store *)
 
   exception Internal_type_error
-  exception Store_error of IrminStore.write_error
 
   let generate_random_directory () =
     Misc.generate_rand_string ~length:20 ()
@@ -97,7 +98,7 @@ module Make (Store: Store.S)
 
     >>= fun res -> match res with
     | Ok () -> Lwt.return m
-    | Error se -> Lwt.fail @@ Store_error se
+    | Error se -> Lwt.fail @@ Store.Store_error se
 
   let add_all ?message kv_list m =
     let l = m.local in
@@ -129,7 +130,7 @@ module Make (Store: Store.S)
 
     >>= fun res -> (match res with
         | Ok () -> Lwt.return m
-        | Error se -> Lwt.fail @@ Store_error se)
+        | Error se -> Lwt.fail @@ Store.Store_error se)
 
   let find key {local; _} =
     (* Get the value from the store and deserialise it *)
@@ -190,7 +191,7 @@ module Make (Store: Store.S)
     keys map
     >|= List.map (fun key -> {name; params = param_list; key})
     >>= fun ops -> Logs_lwt.app (fun m -> m "Generated task queue of [%s]"
-                                    (List.map show_task ops |> String.concat ", "))
+                                    (List.map Task.show ops |> String.concat ", "))
     >|= fun () -> Task_queue (ops, []) (* Initially there are no pending operations *)
 
   let set_task_queue q m =
@@ -199,7 +200,7 @@ module Make (Store: Store.S)
 
     >>= fun res -> match res with
     | Ok () -> Lwt.return_unit
-    | Error we -> Lwt.fail @@ Store_error we
+    | Error we -> Lwt.fail @@ Store.Store_error we
 
   let map ?(timeout=5.0) operation params m =
 
@@ -215,7 +216,7 @@ module Make (Store: Store.S)
     >>= fun map_name -> Logs_lwt.app (fun m -> m "Map operation issued. Branch name %s" map_name)
 
     (* Push the job onto the job queue *)
-    >>= fun () -> Store.JobQueue.Impl.push (Store.JobQueue.Impl.job_of_string map_name) l
+    >>= fun () -> Store.JobQueue.Impl.push (Job.MapJob map_name) l
 
     (* Create a new branch to isolate the operation *)
     >>= fun () -> IrminStore.clone ~src:l ~dst:map_name
@@ -237,7 +238,7 @@ module Make (Store: Store.S)
        Note: here we don't explicitly signal the workers that are available for a
        map, so we have to watch for any changes in the repo and then filter within
        the callback. *)
-    let watch_callback (br_name: IrminStore.branch) (_: Store.IrminStore.commit Irmin.diff) =
+    let watch_callback (br_name: IrminStore.branch) (_: IrminStore.commit Irmin.diff) =
 
       (* Here we assume that all branches that don't start with 'map--' are worker branches
          for this map request. In future this may not always be the case *)
@@ -247,7 +248,7 @@ module Make (Store: Store.S)
         IrminStore.of_branch (IrminStore.repo l) br_name
         >>= Store.JobQueue.Impl.peek_opt
         >>= fun job -> (match job with
-            | Some j when String.equal map_name (Store.JobQueue.Impl.job_to_string j) ->
+            | Some (Job.MapJob m) when String.equal map_name m ->
 
               Logs_lwt.debug (fun m -> m "Resetting count due to activity on branch %s" br_name)
               >|= (fun () -> inactivity_count := 0.0; sleep_interval := !sleep_interval /. 2.)
@@ -259,8 +260,8 @@ module Make (Store: Store.S)
               >>= Misc.handle_merge_conflict br_name map_name
 
             | Some j -> Logs_lwt.warn
-                          (fun m -> m "Woke up due to submitted work for a job %s, but the currently executing job is %s"
-                              (Store.JobQueue.Impl.job_to_string j) map_name)
+                          (fun m -> m "Woke up due to submitted work for a job %a, but the currently executing job is %s"
+                              Job.pp j map_name)
 
             | None -> Lwt.fail @@ E.Protocol_error (Printf.sprintf "Received work on branch %s, but there is no job on this branch" br_name))
 
@@ -308,12 +309,55 @@ module Make (Store: Store.S)
 
     (* For now, we only ever perform one map at once. Eventually, the job queue
        will need to be cleverer to avoid popping off the wrong job here *)
-    >>= fun j -> if Store.JobQueue.Impl.job_equal j (Store.JobQueue.Impl.job_of_string map_name)
-    then Lwt.fail_with "Didn't pop the right job!"
-    else Lwt.return_unit
+    >>= fun j -> (match j with
+    | Job.MapJob m when m = map_name -> Lwt.return_unit
+    | _ -> Lwt.fail_with (Fmt.strf "Expected to pop %a, but actually popped %a" Job.pp (Job.MapJob map_name) Job.pp j))
 
       >>= (fun _ -> Logs_lwt.app @@ fun m -> m "Map operation complete. Branch name %s" map_name)
       >|= fun () -> m
+
+  (* This is the main server process *)
+  let start m =
+    let l = m.local in
+    let pp_task = Fmt.of_to_string (fun (t:Task.t) -> Fmt.strf "<%s> on key %s" t.name t.key) in
+
+    (* The callback wakes up a thread on our queue *)
+    let watch_callback (br_name: IrminStore.branch) (_: IrminStore.commit Irmin.diff) =
+      IrminStore.of_branch (IrminStore.repo l) br_name
+      >>= fun local -> Store.JobQueue.Impl.pop local
+      >>= fun job -> (match job with
+          | Job.Rpc (t, remote) ->
+            let boxed_mi () = (match I.find_operation_opt t.name Impl.api with
+                | Some operation -> operation
+                | None -> invalid_arg "Operation not found") in
+
+            (* Found a pending RPC task *)
+            IrminStore.get local ["val"]
+            >>= (fun v -> match v with Value v -> Lwt.return v | _ -> raise E.Internal_type_error)
+            >>= fun old_val -> Ex.execute_task (boxed_mi ()) t.params old_val
+
+            (* Commit value to store *)
+            >>= fun new_val -> IrminStore.set local ["val"]
+              ~info:(Store.B.make_info ~author:"server" "%a" pp_task t) (Value new_val)
+
+            >>= fun res -> (match res with
+                | Ok () -> Lwt.return_unit
+                | Error se -> Lwt.fail @@ Store.Store_error se)
+
+            (* Merge into master *)
+            (* TODO *)
+
+            (* Push back to the client *)
+            >>= fun () -> Store.upstream ~uri:remote ~branch:br_name
+            >>= fun remote -> Sync.push local remote
+            >>= fun res -> (match res with
+                | Ok () -> Lwt.return_unit
+                | Error pe -> Lwt.fail @@ Store.Push_error pe)
+
+          | Job.MapJob _ -> Lwt.return_unit)
+
+    in let _ = IrminStore.Branch.watch_all (IrminStore.repo l) watch_callback in
+    Lwt.return_unit
 
   let () = Store.B.initialise (); (* XXX *)
 end

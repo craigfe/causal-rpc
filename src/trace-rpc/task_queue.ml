@@ -1,32 +1,14 @@
+module TaskSet = Set.Make(struct type t = Task.t let compare = Task.compare end)
+let pp_taskset = Fmt.using TaskSet.elements (Fmt.braces (Fmt.list ~sep:Fmt.comma Task.pp))
 
-type task = {
-  name: string; [@compare fun _ _ -> 0]
-  params: Type.Boxed.t list; [@compare fun _ _ -> 0]
-  key: string;
-} [@@deriving eq, ord]
+let task_testable = Alcotest.testable Task.pp Task.equal
 
-let show_task t = t.key
-let pp_task = Fmt.using show_task Fmt.string
-
-let task =
-  let open Irmin.Type in
-  record "task" (fun name params key -> { name; params; key })
-  |+ field "name" string (fun t -> t.name)
-  |+ field "params" (list Type.Boxed.irmin_t) (fun t -> t.params)
-  |+ field "key" string (fun t -> t.key)
-  |> sealr
-
-module TaskSet = Set.Make(struct type t = task let compare = compare_task end)
-let pp_taskset = Fmt.using TaskSet.elements (Fmt.braces (Fmt.list ~sep:Fmt.comma pp_task))
-
-let task_testable = Alcotest.testable pp_task equal_task
-
-type t = (task list * task list) [@@deriving show]
-let t = Irmin.Type.(pair (list task) (list task))
+type t = (Task.t list * Task.t list) [@@deriving show]
+let t = Irmin.Type.(pair (list Task.t) (list Task.t))
 let t_testable = Alcotest.(pair (list task_testable) (list task_testable))
 
 let of_internal = TaskSet.of_list
-let to_internal x = List.sort compare_task (TaskSet.elements x)
+let to_internal x = List.sort Task.compare (TaskSet.elements x)
 
 (* type internal = TaskSet.t * TaskSet.t *)
 let pp_internal = Fmt.braces @@ Fmt.pair ~sep:Fmt.comma pp_taskset pp_taskset

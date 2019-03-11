@@ -15,8 +15,6 @@ module type S = sig
 
   type 'a params = (Value.t, 'a) Interface.params
 
-  exception Store_error of Store.IrminStore.write_error
-
   val of_store: Sync.db -> t
   (** Return the map corresponding to an underlying store representation *)
 
@@ -66,7 +64,11 @@ module type S = sig
   (** [map m] returns a map with the same domain as [m] in which
       the associated value [a] of all bindings of [m] have been
       replaced by the result of applying _a_ function to [a] *)
+
+  val start: t -> unit Lwt.t
+  (** Begin running a daemon thread to process RPC jobs in the job queue *)
 end
 
 module Make (Store: Store.S)
+    (Impl: Interface.IMPL with module Val = Store.Value)
     : S with module Store = Store

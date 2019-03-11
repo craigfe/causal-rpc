@@ -2,6 +2,7 @@
 	(name test)
 	(preprocess (pps ppx_deriving.std))
 	(libraries
+    core
 		trace_rpc
     trace_rpc_unix
 		alcotest
