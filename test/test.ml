@@ -11,7 +11,7 @@ let suite = [
 
 let () =
   Random.self_init ();
-  Trace_rpc.Misc.set_reporter ();
+  Trace_rpc.Helpers.set_reporter ();
   Logs.set_level (Some Logs.Info);
   Printexc.record_backtrace true;
 

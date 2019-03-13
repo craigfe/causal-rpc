@@ -43,7 +43,7 @@ module Make (Store: Store.S): S with module Store = Store = struct
   }
 
   let generate_random_directory () =
-    Misc.generate_rand_string ~length:20 ()
+    Helpers.generate_rand_string ~length:20 ()
     |> Pervasives.(^) "/tmp/irmin/client/"
     |> fun x -> Logs.info (fun m -> m "No directory supplied. Generated random directory %s" x); x
 
@@ -89,22 +89,24 @@ module Make (Store: Store.S): S with module Store = Store = struct
 
   let rpc ?(timeout=5.0) operation params t =
     let l = t.local in
-
-    Logs_lwt.app (fun m -> m "<%s> operation issued." @@ Interface.NamedOp.name operation)
+    let task = generate_task operation params in
 
     (* Push a job onto the job queue *)
-    >>= fun () -> let task = generate_task operation params in
     Store.JobQueue.Impl.push (Job.Rpc (task, t.local_uri)) l
 
+    >>= fun () -> Logs_lwt.app (fun m -> m "<%s> operation issued." @@ Interface.NamedOp.name operation)
     (* Prepare to push by creating setting the watch on a thread *)
+
     >|= callback t
     >>= fun (wait, callback_thread) -> IStore.Branch.watch t.repo t.name
       (fun _ -> Lwt.return (Lwt.wakeup wait ()))
 
+    >>= fun watch -> Logs_lwt.app (fun m -> m "Prepared callback thread")
+
     (* Push to the remote *)
-    >>= fun watch -> push t
+    >>= fun () -> push t
     >>= fun res -> (match res with
-        | Ok () -> Lwt.return_unit
+        | Ok () -> Logs_lwt.app (fun m -> m "Successfully pushed to the remote")
         | Error pe -> Lwt.fail @@ Push_error pe)
 
     >>= fun () -> Lwt.pick [callback_thread; timeout_thread timeout]

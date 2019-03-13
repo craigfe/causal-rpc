@@ -21,7 +21,7 @@ let get_repos =
 
 let commit_count url =
   let lwt =
-    Trace_rpc.Misc.set_reporter ();
+    Trace_rpc.Helpers.set_reporter ();
     Logs.set_level (Some Logs.Info);
     Logs.warn (fun m -> m "Attempting request at URI %s/commits " url);
 

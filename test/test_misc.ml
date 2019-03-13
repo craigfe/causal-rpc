@@ -1,5 +1,5 @@
 open Trace_rpc
-open Misc
+open Helpers
 
 let test_split_sequential () =
   let test = Alcotest.(check (pair (list int) (list int))) in

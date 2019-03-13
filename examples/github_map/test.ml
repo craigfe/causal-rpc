@@ -9,7 +9,7 @@ let worker dir = GithubWorker.run
     ()
 
 let count_commit_test _ () =
-  Trace_rpc.Misc.set_reporter ();
+  Trace_rpc.Helpers.set_reporter ();
   Logs.set_level (Some Logs.Info);
 
   let root = global_root ^ "commit_count/" in

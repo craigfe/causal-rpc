@@ -57,14 +57,14 @@ module Make (Store: Store.S)
   exception Internal_type_error
 
   let generate_random_directory () =
-    Misc.generate_rand_string ~length:20 ()
+    Helpers.generate_rand_string ~length:20 ()
     |> Pervasives.(^) "/tmp/irmin/map/"
     |> fun x -> Logs.info (fun m -> m "No directory supplied. Generated random directory %s" x); x
 
   let empty ?(directory=generate_random_directory()) ?remote_uri () =
     let config = Irmin_git.config ~bare:true directory in
 
-    Misc.check_within_tmp directory;
+    Helpers.check_within_tmp directory;
 
     (* Delete the directory if it already exists... Unsafe! *)
     let ret_code = Sys.command ("rm -rf " ^ directory) in
@@ -208,7 +208,7 @@ module Make (Store: Store.S)
 
     (* Generate a new unique branch name for the map *)
     let rec unique_name_gen () =
-      Lwt.wrap (fun () -> "map--" ^ Misc.generate_rand_string ~length:8 ())
+      Lwt.wrap (fun () -> "map--" ^ Helpers.generate_rand_string ~length:8 ())
       >>= fun map_name -> IrminStore.Branch.mem (IrminStore.repo l) map_name
       >>= fun exists -> if exists then unique_name_gen () else Lwt.return map_name
     in unique_name_gen ()
@@ -222,7 +222,7 @@ module Make (Store: Store.S)
     >>= fun () -> IrminStore.clone ~src:l ~dst:map_name
     >>= fun branch -> IrminStore.merge_with_branch l
       ~info:(Store.B.make_info ~author:"map" "Merged") IrminStore.Branch.master
-    >>= Misc.handle_merge_conflict IrminStore.Branch.master map_name
+    >>= Helpers.handle_merge_conflict IrminStore.Branch.master map_name
 
     (* Generate and commit the task queue *)
     >>= fun () -> generate_task_queue operation params m
@@ -257,7 +257,7 @@ module Make (Store: Store.S)
               >>= fun () -> IrminStore.merge_with_branch branch
                 ~info:(Store.B.make_info ~author:"map" "Merged work from %s into %s" br_name map_name) br_name
 
-              >>= Misc.handle_merge_conflict br_name map_name
+              >>= Helpers.handle_merge_conflict br_name map_name
 
             | Some j -> Logs_lwt.warn
                           (fun m -> m "Woke up due to submitted work for a job %a, but the currently executing job is %s"
@@ -302,7 +302,7 @@ module Make (Store: Store.S)
     (* Merge the map branch into master *)
     >>= fun () -> IrminStore.merge_with_branch l
       ~info:(Store.B.make_info ~author: "map" "Job %s complete" map_name) map_name
-    >>= Misc.handle_merge_conflict map_name IrminStore.Branch.master
+    >>= Helpers.handle_merge_conflict map_name IrminStore.Branch.master
 
     (* Remove the job from the job queue *)
     >>= fun () -> Store.JobQueue.Impl.pop l

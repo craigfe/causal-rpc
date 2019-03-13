@@ -2,7 +2,7 @@ open Lwt.Infix
 open Trace_rpc
 open Intmap
 
-module I = IntPair (Trace_rpc_unix.Make)(Helpers.GitBackend)
+module I = IntPair (Trace_rpc_unix.Make)(Global.GitBackend)
 open I
 
 (** Tests on the IntMap datastructure *)

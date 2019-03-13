@@ -59,7 +59,7 @@ end
 
 
 module IntPair (B: Backend.MAKER) (G: Irmin_git.G) = struct
-  module Store = Store.Make(B)(G)(Definition)(Job_queue.Make)
+  module Store = Store.Make(B)(G)(Definition)
 
   module IntClient = Client.Make(Store)
   module IntMap = Map.Make(Store)(Implementation)

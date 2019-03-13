@@ -4,7 +4,7 @@ open Contents
 open Task
 
 let random_name ?src () =
-  Misc.generate_rand_string ~length:8 ()
+  Helpers.generate_rand_string ~length:8 ()
   |> Pervasives.(^) "worker--"
   |> fun x -> Logs.info ?src (fun m -> m "No name supplied. Generating random worker name %s" x); x
 
@@ -83,10 +83,10 @@ module Make
           (fun _ a -> (a, []))
 
         else if random_selection then (* If random_selection is enabled, use that *)
-          Misc.split_random
+          Helpers.split_random
 
         else (* Otherwise pick sequentially from the list *)
-          Misc.split_sequential in
+          Helpers.split_sequential in
 
       let (selected, remaining) = split_func batch_size todo in
       let pp_task = Fmt.of_to_string (fun (t:Task.t) -> Fmt.strf "<%s> on key %s" t.name t.key) in
@@ -176,7 +176,7 @@ module Make
       >>= fun () -> Store.IrminStore.merge_with_branch working_br
         ~info:(Store.B.make_info ~author:worker_name "Updating world-view on %s" map_name)
         map_name
-      >>= Misc.handle_merge_conflict work_br_name map_name
+      >>= Helpers.handle_merge_conflict work_br_name map_name
 
       (* Attempt to take a task from the queue *)
       >>= fun () -> get_tasks_opt ~random_selection ~batch_size working_br input_remote worker_name

@@ -2,7 +2,7 @@ open Lwt.Infix
 open Trace_rpc
 open Intmap
 
-module I = IntPair (Trace_rpc_unix.Make)(Helpers.GitBackend)
+module I = IntPair (Trace_rpc_unix.Make)(Global.GitBackend)
 open I
 
 let worker_pool ?batch_size ?two_phase switch n dir =
@@ -28,11 +28,11 @@ let root = "/tmp/irmin/test_multiple_worker/"
 
 
 let test_single_phase s () =
-  let values = Helpers.sequence_list 1 10 in
-  let keys = List.map Helpers.key_from_int values in
+  let values = Global.sequence_list 1 10 in
+  let keys = List.map Global.key_from_int values in
 
   IntMap.empty ~directory:(root ^ "single_phase") ()
-  >>= IntMap.add_all (Misc.zip keys (List.map Int64.of_int values))
+  >>= IntMap.add_all (Helpers.zip keys (List.map Int64.of_int values))
   >>= fun m -> Lwt.pick @@ (worker_pool ~two_phase:false s 4 "single_phase") @ [
       IntMap.map ~timeout:10.0 multiply_op (Interface.Param (Type.int64, Int64.of_int 10, Interface.Unit)) m
       >|= fun _ -> ()
@@ -61,11 +61,11 @@ let test_small_map s () =
 
 
 let test_medium_map s () =
-  let values = Helpers.sequence_list 1 4 in
-  let keys = List.map Helpers.key_from_int values in
+  let values = Global.sequence_list 1 4 in
+  let keys = List.map Global.key_from_int values in
 
   IntMap.empty ~directory:(root ^ "medium_map") ()
-  >>= IntMap.add_all (Misc.zip keys (List.map Int64.of_int values))
+  >>= IntMap.add_all (Helpers.zip keys (List.map Int64.of_int values))
   >>= fun m -> Lwt.pick @@ (worker_pool s 4 "medium_map") @ [
       let rec inner n = match n with
         | 4 -> Lwt.return_unit
@@ -83,11 +83,11 @@ let test_medium_map s () =
 
 
 let test_large_map s () =
-  let values = Helpers.sequence_list 1 12 in
-  let keys = List.map Helpers.key_from_int values in
+  let values = Global.sequence_list 1 12 in
+  let keys = List.map Global.key_from_int values in
 
   IntMap.empty ~directory:(root ^ "large_map") ()
-  >>= IntMap.add_all (Misc.zip keys (List.map Int64.of_int values))
+  >>= IntMap.add_all (Helpers.zip keys (List.map Int64.of_int values))
   >>= fun m -> Lwt.pick @@ (worker_pool s 4 "large_map") @ [
       IntMap.map ~timeout:10.0 multiply_op (Interface.Param (Type.int64, Int64.of_int 10, Interface.Unit)) m
       >|= fun _ -> ()
@@ -100,11 +100,11 @@ let test_large_map s () =
 
 
 let test_batched_work s () =
-  let values = Helpers.sequence_list 1 12 in
-  let keys = List.map Helpers.key_from_int values in
+  let values = Global.sequence_list 1 12 in
+  let keys = List.map Global.key_from_int values in
 
   IntMap.empty ~directory:(root ^ "batched_work") ()
-  >>= IntMap.add_all (Misc.zip keys (List.map Int64.of_int values))
+  >>= IntMap.add_all (Helpers.zip keys (List.map Int64.of_int values))
   >>= fun m -> Lwt.pick @@ (worker_pool ~batch_size:4 s 4 "batched_work") @ [
       IntMap.map ~timeout:10.0 multiply_op (Interface.Param (Type.int64, Int64.of_int 10, Interface.Unit)) m
       >|= fun _ -> ()
