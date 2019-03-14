@@ -34,7 +34,7 @@ let basic_tests _ () =
   let root = "/tmp/irmin/increment/" in
 
   IntMap.empty ~directory:(root ^ "test-0001") ()
-  >>= IntMap.map increment_op Interface.Unit
+  >>= IntMap.map increment_op Operation.Unit
   >|= (fun _ -> Alcotest.(check pass "Calling map on an empty Map terminates" () ()))
 
 let timeout_tests () =
@@ -44,7 +44,7 @@ let timeout_tests () =
   try Lwt_main.run (
       IntMap.empty ~directory:(root ^ "test-0001") ()
       >>= IntMap.add "unchanged" Int64.one
-      >>= IntMap.map ~timeout:epsilon_float increment_op Interface.Unit
+      >>= IntMap.map ~timeout:epsilon_float increment_op Operation.Unit
       >|= fun _ -> Alcotest.(fail descr))
 
   with Exceptions.Timeout -> Alcotest.(check pass descr Exceptions.Timeout Exceptions.Timeout)
@@ -59,7 +59,7 @@ let noop_tests s () =
   >>= fun m -> Lwt.pick [
     worker s "noop/test-0001";
 
-    map identity_op Interface.Unit m
+    map identity_op Operation.Unit m
     >|= fun _ -> ()
   ]
 
@@ -71,9 +71,9 @@ let noop_tests s () =
   >>= fun m -> Lwt.pick [
     worker s "noop/test-0002";
 
-    map ~timeout:5.0 identity_op Interface.Unit m
-    >>= map ~timeout:5.0 identity_op Interface.Unit
-    >>= map ~timeout:5.0 identity_op Interface.Unit
+    map ~timeout:5.0 identity_op Operation.Unit m
+    >>= map ~timeout:5.0 identity_op Operation.Unit
+    >>= map ~timeout:5.0 identity_op Operation.Unit
     >|= fun _ -> ()
   ]
   >>= fun _ -> find "a" m
@@ -88,7 +88,7 @@ let increment_tests s () =
   >>= fun m -> Lwt.pick [
     worker s "increment/test-0001";
 
-    map increment_op Interface.Unit m
+    map increment_op Operation.Unit m
     >|= fun _ -> ()
   ]
   >>= fun () -> find "a" m
@@ -100,9 +100,9 @@ let increment_tests s () =
   >>= fun m -> Lwt.pick [
     worker s "increment/test-0002";
 
-    map increment_op Interface.Unit m
-    >>= map increment_op Interface.Unit
-    >>= map increment_op Interface.Unit
+    map increment_op Operation.Unit m
+    >>= map increment_op Operation.Unit
+    >>= map increment_op Operation.Unit
     >|= fun _ -> ()
   ]
   >>= fun () -> find "a" m
@@ -115,7 +115,7 @@ let increment_tests s () =
   >>= fun m -> Lwt.pick [
     worker s "increment/test-0003";
 
-    map increment_op Interface.Unit m
+    map increment_op Operation.Unit m
     >|= fun _ -> ()
   ]
   >>= fun () -> values m
@@ -133,7 +133,7 @@ let multiply_tests s () =
   >>= fun m -> Lwt.pick [
     worker s "multiply/test-0001";
 
-    IntMap.map multiply_op (Interface.Param (Type.int64, Int64.of_int 5, Interface.Unit)) m
+    IntMap.map multiply_op (Operation.Param (Type.int64, Int64.of_int 5, Operation.Unit)) m
     >|= fun _ -> ()
   ]
   >>= fun () -> IntMap.values m
@@ -153,7 +153,7 @@ let test_work_batches s () =
 
   >>= fun m -> Lwt.pick [
     worker ~batch_size:2 s "work_batches/test-0001";
-    IntMap.map multiply_op (Interface.Param (Type.int64, Int64.of_int 10, Interface.Unit)) m
+    IntMap.map multiply_op (Operation.Param (Type.int64, Int64.of_int 10, Operation.Unit)) m
     >|= fun _ -> ()
   ]
   >>= fun () -> IntMap.values m
@@ -170,7 +170,7 @@ let test_work_batches s () =
 
   >>= fun m -> Lwt.pick [
     worker ~batch_size:10 s "work_batches/test-0002";
-    IntMap.map multiply_op (Interface.Param (Type.int64, Int64.of_int 10, Interface.Unit)) m
+    IntMap.map multiply_op (Operation.Param (Type.int64, Int64.of_int 10, Operation.Unit)) m
     >|= fun _ -> ()
   ]
   >>= fun () -> IntMap.values m

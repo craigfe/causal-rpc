@@ -1,7 +1,7 @@
 
 (* A store is an instance of CausalRPC at a particular node *)
 module type S = sig
-  module Description: Interface.DESC
+  module Description: Description.S
   module Value = Description.Val
   module IrminContents: Irmin.Contents.S with type t = Value.t Contents.t
 
@@ -14,7 +14,7 @@ module type S = sig
   module B: Backend.S
   module IrminSync: Irmin.SYNC with type db = IrminStore.t
   module JobQueue: Contents.JOB_QUEUE with module Store = IrminStore
-  module Operation: Interface.OPERATION with module Val = Value
+  module Operation: Operation.S with module Val = Value
 
   exception Store_error of IrminStore.write_error
   exception Push_error of IrminSync.push_error
@@ -34,7 +34,7 @@ end
 module Make
     (BackendMaker: Backend.MAKER)
     (GitBackend: Irmin_git.G)
-    (Desc: Interface.DESC): S
+    (Desc: Description.S): S
   with module Description = Desc
-   and module Operation = Interface.MakeOperation(Desc.Val)
+   and module Operation = Operation.Make(Desc.Val)
    and type IrminStore.branch = string

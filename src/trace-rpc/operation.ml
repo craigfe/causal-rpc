@@ -23,7 +23,7 @@ type (_,_) interface =
 
 type ('v,'a) implementation = ('v,'a) interface * 'a
 
-module type OPERATION = sig
+module type S = sig
   module Val: Irmin.Contents.S
 
   type t = | B: (Val.t, 'a, 'p) NamedOp.t -> t
@@ -49,7 +49,7 @@ module type OPERATION = sig
   val compare: t -> t -> int
 end
 
-module MakeOperation(T: Irmin.Contents.S): OPERATION with module Val = T = struct
+module Make(T: Irmin.Contents.S): S with module Val = T = struct
   module Val = T
 
   type t = | B: (Val.t, 'a, 'p) NamedOp.t -> t

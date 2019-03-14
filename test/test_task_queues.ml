@@ -125,7 +125,7 @@ let test_merge _ () =
  * 
  *   IntMap.empty ~directory:(root ^ "test-0001") ()
  *   >>= IntMap.add "a" Int64.one
- *   >>= IntMap.generate_task_queue Intmap.increment_op Interface.Unit (\* TODO: It shouldn't be necessary to pass the empty list here *\)
+ *   >>= IntMap.generate_task_queue Intmap.increment_op Operation.Unit (\* TODO: It shouldn't be necessary to pass the empty list here *\)
  * 
  *   >|= (fun c -> match c with
  *       | Task_queue (s, []) ->

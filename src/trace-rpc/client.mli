@@ -13,8 +13,8 @@ module type S = sig
     -> t Lwt.t
 
   val rpc: ?timeout:float
-    -> (Value.t,'a,'p) Interface.NamedOp.t
-    -> (Value.t, 'a) Interface.params
+    -> (Value.t,'a,'p) Operation.NamedOp.t
+    -> (Value.t, 'a) Operation.params
     -> t -> Value.t Lwt.t
 
   val output: t -> unit Lwt.t

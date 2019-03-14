@@ -8,13 +8,13 @@ module C: Irmin.Contents.S with type t = contents = struct
   let merge = Irmin.Merge.(option (default t))
 end
 
-module O = Interface.MakeOperation(C)
+module O = Operation.Make(C)
 open O
 
 let commit_count_op = declare "commit_count" return
 module Definition = struct
   module Val = C
-  module D = Interface.Description(C)
+  module D = Description.Make(C)
   open D
 
   type shape = contents -> contents

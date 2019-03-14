@@ -17,8 +17,8 @@ module type S = sig
     -> t Lwt.t
 
   val rpc: ?timeout:float
-    -> (Value.t,'a,'p) Interface.NamedOp.t
-    -> (Value.t, 'a) Interface.params
+    -> (Value.t,'a,'p) Operation.NamedOp.t
+    -> (Value.t, 'a) Operation.params
     -> t -> Value.t Lwt.t
 
   val output: t -> unit Lwt.t
@@ -83,7 +83,7 @@ module Make (Store: Store.S): S with module Store = Store = struct
     >>= fun () -> Lwt.fail Exceptions.Timeout
 
   let generate_task operation params =
-    let name = Interface.NamedOp.name operation in
+    let name = Operation.NamedOp.name operation in
     let params = Store.Operation.flatten_params params in
     Task.{name; params; key = "root"}
 
@@ -94,7 +94,7 @@ module Make (Store: Store.S): S with module Store = Store = struct
     (* Push a job onto the job queue *)
     Store.JobQueue.Impl.push (Job.Rpc (task, t.local_uri)) l
 
-    >>= fun () -> Logs_lwt.app (fun m -> m "<%s> operation issued." @@ Interface.NamedOp.name operation)
+    >>= fun () -> Logs_lwt.app (fun m -> m "<%s> operation issued." @@ Operation.NamedOp.name operation)
     (* Prepare to push by creating setting the watch on a thread *)
 
     >|= callback t

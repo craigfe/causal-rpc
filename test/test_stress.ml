@@ -59,7 +59,7 @@ let stress_test s () =
   >>= IntMap.add_all (Misc.zip keys (List.map Int64.of_int values))
   >>= fun m -> Lwt.pick @@ (worker_pool s 4 "stress/test-0001") @ [
       let rec inner n map =
-        IntMap.map ~timeout:100.0 increment_op Interface.Unit map
+        IntMap.map ~timeout:100.0 increment_op Operation.Unit map
         >>= IntMap.values
         >|= List.map Int64.to_int
         >|= List.sort compare
