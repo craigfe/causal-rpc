@@ -19,6 +19,14 @@ type _ t =
   | List      : 'a t -> 'a list t
   | Option    : 'a t -> 'a option t
   | Result    : ('a t * 'b t) -> ('a, 'b) result t
+  | Recursive : 'a recur -> 'a t
+
+and 'a recur = { mutable recur: 'a t }
+
+let mu: type a. (a t -> a t) -> a t = fun f ->
+  let rec x = { recur = Recursive x } in
+  let x' = f (Recursive x) in
+  x.recur <- x'; x'
 
 type 'a equal = 'a -> 'a -> bool
 
@@ -36,6 +44,7 @@ module Refl = struct
     | Int64    , Int64     -> Some Eq
     | String   , String    -> Some Eq
     | Unit     , Unit      -> Some Eq
+
     | Array a1, Array a2 -> (match t a1 a2 with
         | Some Eq -> Some Eq
         | None -> None)
@@ -48,6 +57,11 @@ module Refl = struct
     | Result (o1, e1), Result (o2, e2) -> (match (t o1 o2, t e1 e2) with
         | (Some Eq, Some Eq) -> Some Eq
         | _ -> None)
+
+  (* Peel off the layers of the recursion *)
+    | Recursive a, _ -> t a.recur b
+    | _, Recursive b -> t a b.recur
+
     | _, _ -> None
 
 end
@@ -83,6 +97,7 @@ module Equal = struct
     | List l  -> list (t l)
     | Option o -> option (t o)
     | Result (o, e) -> result (t o) (t e)
+    | Recursive r -> t r.recur
 end
 
 let unit   = Unit
@@ -102,6 +117,7 @@ let result o e = Result (o, e)
 let refl = Refl.t
 let equal = Equal.t
 
+let mu' = mu
 module Boxed = struct
   type box =
     | Bool of bool
@@ -116,13 +132,14 @@ module Boxed = struct
     | Array of box array
     | List of box list
     | Option of box option
-    | Result of (box, box) result [@@deriving show, eq]
+    | Result of (box, box) result
+    | Recursive of (box -> box) [@@deriving show]
 
   let irmin_t = let open Irmin.Type in
     mu (fun x -> variant "irmin_t"
            (fun bool bytes char float int int32
              int64 string unit array list option
-             result -> function
+             result recursive -> function
              | Bool b -> bool b
              | Bytes b -> bytes b
              | Char c -> char c
@@ -135,7 +152,8 @@ module Boxed = struct
              | Array a -> array a
              | List l -> list l
              | Option o -> option o
-             | Result r -> result r)
+             | Result r -> result r
+             | Recursive f -> recursive f)
                  |~ case1 "Bool" bool (fun b -> Bool b)
                  |~ case1 "Bytes" bytes (fun b -> Bytes b)
                  |~ case1 "Char" char (fun c -> Char c)
@@ -149,6 +167,7 @@ module Boxed = struct
                  |~ case1 "List" (list x) (fun l -> List l)
                  |~ case1 "Option" (option x) (fun o -> Option o)
                  |~ case1 "Result" (result x x) (fun r -> Result r)
+                 |~ case1 "Recursive" x (fun f -> f)
                  |> sealv)
 
   let pp_cust ppf v = match v with
