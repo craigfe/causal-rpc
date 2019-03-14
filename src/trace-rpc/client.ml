@@ -92,7 +92,7 @@ module Make (Store: Store.S): S with module Store = Store = struct
     let task = generate_task operation params in
 
     (* Push a job onto the job queue *)
-    Store.JobQueue.Impl.push (Job.Rpc (task, t.local_uri)) l
+    Store.JobQueue.push (Job.Rpc (task, t.local_uri)) l
 
     >>= fun () -> Logs_lwt.app (fun m -> m "<%s> operation issued." @@ Operation.NamedOp.name operation)
     (* Prepare to push by creating setting the watch on a thread *)

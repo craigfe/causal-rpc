@@ -1,24 +1,7 @@
-type job_queue = Job.t list
-let job_queue = Irmin.Type.list Job.t
-
 type 'v t =
   | Value of 'v
   | Task_queue of Task_queue.t
-  | Job_queue of job_queue
-
-module type JOB_QUEUE = sig
-  module Store: Irmin.KV
-
-  module type IMPL = sig
-    val is_empty: Store.t -> bool Lwt.t
-    val push: Job.t -> Store.t -> unit Lwt.t
-    val pop: Store.t -> (Job.t, string) result Lwt.t
-    val pop_silent: Store.t -> (Job.t * Job.t list) Lwt.t
-    val peek_opt: Store.t -> Job.t option Lwt.t
-  end
-
-  module Impl: IMPL
-end
+  | Job_queue of Job_queue.t
 
 type 'a cntnts = 'a t (* Disambiguate <t>s *)
 module Make (Val: Irmin.Contents.S): Irmin.Contents.S
@@ -34,7 +17,7 @@ module Make (Val: Irmin.Contents.S): Irmin.Contents.S
         | Job_queue js -> job_queue js)
     |~ case1 "Value" Val.t (fun v -> Value v)
     |~ case1 "Task_queue" Task_queue.t (fun q -> Task_queue q)
-    |~ case1 "Job_queue" job_queue (fun js -> Job_queue js)
+    |~ case1 "Job_queue" Job_queue.t (fun js -> Job_queue js)
     |> sealv
 
   let merge ~old t1 t2 =

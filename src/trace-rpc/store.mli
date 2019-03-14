@@ -13,7 +13,16 @@ module type S = sig
 
   module B: Backend.S
   module IrminSync: Irmin.SYNC with type db = IrminStore.t
-  module JobQueue: Contents.JOB_QUEUE with module Store = IrminStore
+
+  module type JOB_QUEUE = sig
+    val is_empty: IrminStore.t -> bool Lwt.t
+    val push: Job.t -> IrminStore.t -> unit Lwt.t
+    val pop: IrminStore.t -> (Job.t, string) result Lwt.t
+    val pop_silent: IrminStore.t -> (Job.t * Job.t list) Lwt.t
+    val peek_opt: IrminStore.Store.t -> Job.t option Lwt.t
+  end
+
+  module JobQueue: JOB_QUEUE 
   module Operation: Operation.S with module Val = Value
 
   exception Store_error of IrminStore.write_error

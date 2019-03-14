@@ -216,7 +216,7 @@ module Make (Store: Store.S)
     >>= fun map_name -> Logs_lwt.app (fun m -> m "Map operation issued. Branch name %s" map_name)
 
     (* Push the job onto the job queue *)
-    >>= fun () -> Store.JobQueue.Impl.push (Job.MapJob map_name) l
+    >>= fun () -> Store.JobQueue.push (Job.MapJob map_name) l
 
     (* Create a new branch to isolate the operation *)
     >>= fun () -> IrminStore.clone ~src:l ~dst:map_name
@@ -246,7 +246,7 @@ module Make (Store: Store.S)
       else if not (String.sub br_name  0 5 |> String.equal "map--") then begin
 
         IrminStore.of_branch (IrminStore.repo l) br_name
-        >>= Store.JobQueue.Impl.peek_opt
+        >>= Store.JobQueue.peek_opt
         >>= fun job -> (match job with
             | Some (Job.MapJob m) when String.equal map_name m ->
 
@@ -305,7 +305,7 @@ module Make (Store: Store.S)
     >>= Helpers.handle_merge_conflict map_name IrminStore.Branch.master
 
     (* Remove the job from the job queue *)
-    >>= fun () -> Store.JobQueue.Impl.pop l
+    >>= fun () -> Store.JobQueue.pop l
 
     (* For now, we only ever perform one map at once. Eventually, the job queue
        will need to be cleverer to avoid popping off the wrong job here *)
@@ -325,7 +325,7 @@ module Make (Store: Store.S)
     (* The callback wakes up a thread on our queue *)
     let watch_callback (br_name: IrminStore.branch) (_: IrminStore.commit Irmin.diff) =
       IrminStore.of_branch (IrminStore.repo l) br_name
-      >>= fun local -> Store.JobQueue.Impl.pop local
+      >>= fun local -> Store.JobQueue.pop local
       >>= fun result -> (match result with
       | Ok job -> Lwt.return job
       | Error msg -> Lwt.fail_with (Fmt.strf "Error <%s> when attempting to pop from job queue on branch %s" msg br_name))

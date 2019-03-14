@@ -2,6 +2,7 @@ open Lwt.Infix
 open Contents
 
 type 'v contents = 'v Contents.t
+exception Empty_queue
 
 module type S = sig
   module Description: Description.S
@@ -16,7 +17,16 @@ module type S = sig
 
   module B: Backend.S
   module IrminSync: Irmin.SYNC with type db = IrminStore.t
-  module JobQueue: Contents.JOB_QUEUE with module Store = IrminStore
+
+  module type JOB_QUEUE = sig
+    val is_empty: IrminStore.t -> bool Lwt.t
+    val push: Job.t -> IrminStore.t -> unit Lwt.t
+    val pop: IrminStore.t -> (Job.t, string) result Lwt.t
+    val pop_silent: IrminStore.t -> (Job.t * Job.t list) Lwt.t
+    val peek_opt: IrminStore.t -> Job.t option Lwt.t
+  end
+
+  module JobQueue: JOB_QUEUE
   module Operation: Operation.S with module Val = Value
 
   exception Store_error of IrminStore.write_error
@@ -39,11 +49,67 @@ module Make
   module Description = Desc
   module Value = Description.Val
   module IrminContents = Contents.Make(Desc.Val)
-
   module B = BackendMaker(GitBackend)(IrminContents)
+
+  module type JOB_QUEUE = sig
+    val is_empty: B.Store.t -> bool Lwt.t
+    val push: Job.t -> B.Store.t -> unit Lwt.t
+    val pop: B.Store.t -> (Job.t, string) result Lwt.t
+    val pop_silent: B.Store.t -> (Job.t * Job.t list) Lwt.t
+    val peek_opt: B.Store.t -> Job.t option Lwt.t
+  end
+
   module IrminStore = B.Store
   module IrminSync = Irmin.Sync(IrminStore)
-  module JobQueue = Job_queue.Make(Desc.Val)((B))
+
+  module JobQueue = struct
+    let of_map m =
+      B.Store.find m ["job_queue"]
+      >|= fun q -> match q with
+      | Some Job_queue js -> js
+      | Some _ -> invalid_arg "Can't happen by design"
+      | None -> []
+
+    let is_empty m =
+      of_map m >|= Job_queue.is_empty
+
+    let push j m = (* TODO: make this atomic *)
+      of_map m
+      >|= Job_queue.push j
+      >>= fun js' -> B.Store.set m
+        ~info:(B.make_info ~author:"map" "Add %a to job queue" Job.pp j)
+        ["job_queue"]
+        (Contents.Job_queue js')
+      >|= fun res -> match res with
+      | Ok () -> ()
+      | Error _ -> invalid_arg "some error"
+
+    (* TODO: make sure the right job is popped *)
+    let pop m = (* TODO: make this atomic *)
+      of_map m
+      >|= Job_queue.pop
+      >>= function
+      | Ok (j, js) -> 
+        B.Store.set m
+          ~info:(B.make_info ~author:"map" "Remove %a from job queue" Job.pp j)
+          ["job_queue"] (Job_queue js)
+        >|= fun res -> (match res with
+        | Ok () -> Ok j
+        | Error _ -> Error "Store_error")
+      | Error e -> Lwt.return @@ Error e
+
+    let pop_silent m =
+      of_map m
+      >|= Job_queue.pop
+      >|= function
+      | Ok (j, js) -> (j, js)
+      | Error _ -> raise Empty_queue
+
+    let peek_opt m =
+      of_map m
+      >|= Job_queue.peek_opt
+  end
+
   module Operation = Operation.Make(Desc.Val)
 
   exception Store_error of IrminStore.write_error

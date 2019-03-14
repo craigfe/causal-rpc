@@ -301,7 +301,7 @@ module Make
       >>= fun () -> Sync.pull master upstr (`Merge (Store.B.make_info ~author:"worker_ERROR" "This should always be a fast-forward"))
       >>= handle_pull_errors
 
-      >>= fun () -> Store.JobQueue.Impl.peek_opt master
+      >>= fun () -> Store.JobQueue.peek_opt master
       >>= fun j -> Logs_lwt.debug (fun m -> m "Branches seen before: %a"
                                       (Fmt.brackets @@ Fmt.list ~sep:Fmt.comma Fmt.string) (SS.elements !seen_before))
       >>= fun () -> (match j with
