@@ -13,7 +13,7 @@ module type S = sig
   module Sync = Store.IrminSync
   module Value = Store.Value
 
-  type 'a params = (Value.t, 'a) Interface.params
+  type 'a params = (Value.t, 'a) Operation.params
 
   val of_store: Sync.db -> t
   (** Return the map corresponding to an underlying store representation *)
@@ -60,7 +60,7 @@ module type S = sig
   val values: t -> Value.t list Lwt.t
   (** Return a list of values in the map *)
 
-  val map: ?timeout:float -> (Value.t,'a,'p) Interface.NamedOp.t -> 'a params -> t -> t Lwt.t
+  val map: ?timeout:float -> (Value.t,'a,'p) Operation.NamedOp.t -> 'a params -> t -> t Lwt.t
   (** [map m] returns a map with the same domain as [m] in which
       the associated value [a] of all bindings of [m] have been
       replaced by the result of applying _a_ function to [a] *)

@@ -7,7 +7,7 @@ module Int: Irmin.Contents.S with type t = int64 = struct
 end
 
 
-module O = Interface.MakeOperation(Int)
+module O = Operation.Make(Int)
 open O
 
 let identity_op  = declare "identity" return
@@ -18,7 +18,7 @@ let complex_op   = declare "complex" Type.(int32 @-> int64 @-> string @-> unit @
 
 module Definition = struct
   module Val = Int
-  module D = Interface.Description(Int)
+  module D = Description.Make(Int)
   open D
 
   type shape = ((O.Val.t -> O.Val.t) *

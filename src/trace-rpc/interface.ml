@@ -1,41 +1,9 @@
 include Operation
-
-exception Invalid_description of string
-module Description(Val: Irmin.Contents.S) = struct
-  module Op = MakeOperation(Val)
-  module OpSet = Set.Make(Op)
-
-  (* A description is a set of operations *)
-  type 'i t = OpSet.t
-
-  let describe unboxed = Op.B unboxed
-
-  let rec interface_to_list: type i p. (Val.t, i) interface -> Op.t list = fun interface ->
-    match interface with
-    | Unary t -> [Op.B t]
-    | Complex (t, ts) -> (Op.B t)::interface_to_list(ts)
-
-  let (@) i is = Complex (i, is)
-
-  let finally op = Unary op
-
-  let define: (Val.t, 'i) interface -> 'i t = fun interface ->
-    let l = interface_to_list interface in
-    let len = List.length l in
-    let set = OpSet.of_list l in
-
-    if (OpSet.cardinal set != len) then
-      raise @@ Invalid_description "Duplicate function name contained in list"
-    else set
-
-  let valid_name name d =
-    OpSet.exists (fun b -> match b with
-        | Op.B unboxed -> (NamedOp.name unboxed) == name) d
-end
+open Exceptions
 
 module type IMPL_MAKER = sig
   module S: Irmin.Contents.S
-  module Op: OPERATION with module Val = S
+  module Op: Operation.S with module Val = S
 
   type 'i t
   (** The type of implementations with type structure 'i from type 'a to 'a *)
@@ -56,9 +24,9 @@ end
 
 module MakeImplementation(T: Irmin.Contents.S): IMPL_MAKER
   with module S = T
-   and module Op = MakeOperation(T) = struct
+   and module Op = Operation.Make(T) = struct
   module S = T
-  module Op = MakeOperation(T)
+  module Op = Operation.Make(T)
 
   (* An implementation is a map from operations to type-preserving functions
      with string parameters *)
@@ -101,14 +69,6 @@ module MakeImplementation(T: Irmin.Contents.S): IMPL_MAKER
   let find_operation_opt key impl =
     Hashtbl.find_opt impl key
 end
-
-
-module type DESC = sig
-  module Val: Irmin.Contents.S
-  type shape
-  val api: shape Description(Val).t
-end
-
 
 module type IMPL = sig
   module Val: Irmin.Contents.S

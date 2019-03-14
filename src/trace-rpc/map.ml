@@ -12,7 +12,7 @@ module type S = sig
   module Sync = Store.IrminSync
   module Value = Store.Value
 
-  type 'a params = (Value.t, 'a) Interface.params
+  type 'a params = (Value.t, 'a) Operation.params
 
   val of_store: Sync.db -> t
   val to_store: t -> Sync.db
@@ -27,7 +27,7 @@ module type S = sig
   val size: t -> int Lwt.t
   val keys: t -> key list Lwt.t
   val values: t -> Value.t list Lwt.t
-  val map: ?timeout:float -> (Value.t,'a,'p) Interface.NamedOp.t -> 'a params -> t -> t Lwt.t
+  val map: ?timeout:float -> (Value.t,'a,'p) Operation.NamedOp.t -> 'a params -> t -> t Lwt.t
   val start: t -> unit Lwt.t
 end
 
@@ -46,7 +46,7 @@ module Make (Store: Store.S)
 
   type key = string
   type value = Value.t
-  type 'a params = (Value.t, 'a) Interface.params
+  type 'a params = (Value.t, 'a) Operation.params
 
   type t = {
     local: IrminStore.t;
@@ -183,9 +183,9 @@ module Make (Store: Store.S)
     get_task_queue branch
     >|= fun (a, b) -> (List.length a) + (List.length b)
 
-  let generate_task_queue: type a p. (value, a, p) Interface.NamedOp.t -> a params -> t -> value Contents.t Lwt.t = fun operation params map ->
+  let generate_task_queue: type a p. (value, a, p) Operation.NamedOp.t -> a params -> t -> value Contents.t Lwt.t = fun operation params map ->
     let open Task_queue in
-    let name = Interface.NamedOp.name operation in
+    let name = Operation.NamedOp.name operation in
     let param_list = Store.Operation.flatten_params params in
 
     keys map
