@@ -67,19 +67,20 @@ module Make (Store: Store.S): S with module Store = Store = struct
     IStore.Repo.v config
     >>= fun repo -> IStore.of_branch repo name
     >>= fun local -> IStore.set local ["val"] (Contents.Value initial) ~info
-    >>= fun res -> (match res with
+    >>= (function
         | Ok () -> Lwt.return_unit
         | Error se -> Lwt.fail @@ Store.Store_error se)
     >>= fun () -> Store.upstream remote_uri name
     >|= fun remote -> {repo; local; local_uri; remote; name}
 
   let callback t () =
-    let (thread, wait) = Lwt.wait () in
+    let (thread, wait) = MProf.Trace.named_task "ClientWaitForRPCResponse" in
     (wait, thread >>= fun () -> value t)
 
   (* Thread that fails after f *)
   let timeout_thread f =
     Store.B.sleep f
+    >|= (fun () -> MProf.Trace.label "ClientTimeoutThread")
     >>= fun () -> Lwt.fail Exceptions.Timeout
 
   let generate_task operation params =
@@ -109,7 +110,9 @@ module Make (Store: Store.S): S with module Store = Store = struct
         | Ok () -> Logs_lwt.app (fun m -> m "Successfully pushed to the remote")
         | Error pe -> Lwt.fail @@ Push_error pe)
 
-    >>= fun () -> Lwt.pick [callback_thread; timeout_thread timeout]
+    >>= fun () -> Lwt.pick [
+      (callback_thread >>= fun v -> IStore.unwatch watch >>= fun () -> Lwt.return v);
+      timeout_thread timeout]
 
   let output t =
     Store.IrminStore.Branch.get t.repo t.name

@@ -12,6 +12,7 @@
 		fmt.tty
 		irmin
 		irmin-git
+    mirage-profile
 		logs.cli
 		logs.fmt
 		logs.lwt
