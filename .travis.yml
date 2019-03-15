@@ -3,7 +3,7 @@ install: wget https://raw.githubusercontent.com/ocaml/ocaml-ci-scripts/master/.t
 script:
   - bash -ex .travis-ocaml.sh
   - eval $(opam config env)
-  - opam install --yes dune alcotest core alcotest-lwt digestif cmdliner fmt irmin irmin-unix logs lwt ocamlgraph
+  - opam install --yes dune alcotest core checkseum alcotest-lwt digestif cmdliner fmt irmin irmin-unix logs lwt ocamlgraph
 
   - git clone https://github.com/mirage/irmin /tmp/irmin
   - opam pin irmin-graphql.dev /tmp/irmin -y || true
