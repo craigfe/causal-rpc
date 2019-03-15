@@ -2,4 +2,4 @@
      (names parallel_workers datastructures worker worknode stress_test)
      (public_names a b c d e)
      (package trace-rpc-bench)
-     (libraries trace-rpc-unix core_bench cmdliner))
+     (libraries trace-rpc-unix mirage-profile mirage-profile-unix core_bench cmdliner))

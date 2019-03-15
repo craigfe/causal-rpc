@@ -1,5 +1,5 @@
 let () =
-  Trace_rpc.Misc.set_reporter ();
+  Trace_rpc.Helpers.set_reporter ();
   Logs.set_level (Some Logs.Debug);
 
   let dir = "/tmp/irmin/worktest" in
