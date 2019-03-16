@@ -5,6 +5,9 @@ open Intmap
 module I = IntPair (Trace_rpc_unix.Make)(Global.GitBackend)
 open I
 
+let id = O.apply identity_op
+let inc = O.apply increment_op
+
 let worker ?batch_size switch dir = IntWorker.run
     ~switch
     ~config:(Worker.Config.make
@@ -34,7 +37,7 @@ let basic_tests _ () =
   let root = "/tmp/irmin/increment/" in
 
   IntMap.empty ~directory:(root ^ "test-0001") ()
-  >>= IntMap.map increment_op Operation.Unit
+  >>= IntMap.map id
   >|= (fun _ -> Alcotest.(check pass "Calling map on an empty Map terminates" () ()))
 
 let timeout_tests () =
@@ -44,7 +47,7 @@ let timeout_tests () =
   try Lwt_main.run (
       IntMap.empty ~directory:(root ^ "test-0001") ()
       >>= IntMap.add "unchanged" Int64.one
-      >>= IntMap.map ~timeout:epsilon_float increment_op Operation.Unit
+      >>= IntMap.map ~timeout:epsilon_float id
       >|= fun _ -> Alcotest.(fail descr))
 
   with Exceptions.Timeout -> Alcotest.(check pass descr Exceptions.Timeout Exceptions.Timeout)
@@ -59,7 +62,7 @@ let noop_tests s () =
   >>= fun m -> Lwt.pick [
     worker s "noop/test-0001";
 
-    map identity_op Operation.Unit m
+    map id m
     >|= fun _ -> ()
   ]
 
@@ -71,9 +74,9 @@ let noop_tests s () =
   >>= fun m -> Lwt.pick [
     worker s "noop/test-0002";
 
-    map ~timeout:5.0 identity_op Operation.Unit m
-    >>= map ~timeout:5.0 identity_op Operation.Unit
-    >>= map ~timeout:5.0 identity_op Operation.Unit
+    map ~timeout:5.0 id m
+    >>= map ~timeout:5.0 id
+    >>= map ~timeout:5.0 id
     >|= fun _ -> ()
   ]
   >>= fun _ -> find "a" m
@@ -88,7 +91,7 @@ let increment_tests s () =
   >>= fun m -> Lwt.pick [
     worker s "increment/test-0001";
 
-    map increment_op Operation.Unit m
+    map inc m
     >|= fun _ -> ()
   ]
   >>= fun () -> find "a" m
@@ -100,9 +103,9 @@ let increment_tests s () =
   >>= fun m -> Lwt.pick [
     worker s "increment/test-0002";
 
-    map increment_op Operation.Unit m
-    >>= map increment_op Operation.Unit
-    >>= map increment_op Operation.Unit
+    map inc m
+    >>= map inc
+    >>= map inc
     >|= fun _ -> ()
   ]
   >>= fun () -> find "a" m
@@ -115,7 +118,7 @@ let increment_tests s () =
   >>= fun m -> Lwt.pick [
     worker s "increment/test-0003";
 
-    map increment_op Operation.Unit m
+    map inc m
     >|= fun _ -> ()
   ]
   >>= fun () -> values m
@@ -133,13 +136,31 @@ let multiply_tests s () =
   >>= fun m -> Lwt.pick [
     worker s "multiply/test-0001";
 
-    IntMap.map multiply_op (Operation.Param (Type.int64, Int64.of_int 5, Operation.Unit)) m
+    IntMap.map (O.apply multiply_op (Int64.of_int 5)) m
     >|= fun _ -> ()
   ]
   >>= fun () -> IntMap.values m
   >|= List.map Int64.to_int
   >|= List.sort compare
   >|= Alcotest.(check (list int)) "Multiply request on multiple keys" [0; 50; 500]
+
+(* More of a test of the apply function than anything else. Should probably just be a
+   unit test of the Operation module *)
+let many_argument_tests s () =
+  let root = "/tmp/irmin/test_single_worker/complex_operation/" in
+  IntMap.empty ~directory:(root ^ "test-0001") ()
+  >>= IntMap.add "a" Int64.one
+  >>= fun m -> Lwt.pick [
+    worker s "complex_operation/test-0001";
+
+    let rpc = O.apply complex_op 1 [2; 3; 4; 5] () "6" in
+    IntMap.map rpc m
+
+    >|= fun _ -> ()
+  ]
+  >>= fun () -> IntMap.values m
+  >|= List.map Int64.to_int
+  >|= Alcotest.(check (list int)) "Many argument function" [720]
 
 let test_work_batches s () =
   let root = "/tmp/irmin/test_single_worker/work_batches/" in
@@ -153,7 +174,7 @@ let test_work_batches s () =
 
   >>= fun m -> Lwt.pick [
     worker ~batch_size:2 s "work_batches/test-0001";
-    IntMap.map multiply_op (Operation.Param (Type.int64, Int64.of_int 10, Operation.Unit)) m
+    IntMap.map (O.apply multiply_op (Int64.of_int 10)) m
     >|= fun _ -> ()
   ]
   >>= fun () -> IntMap.values m
@@ -170,7 +191,7 @@ let test_work_batches s () =
 
   >>= fun m -> Lwt.pick [
     worker ~batch_size:10 s "work_batches/test-0002";
-    IntMap.map multiply_op (Operation.Param (Type.int64, Int64.of_int 10, Operation.Unit)) m
+    IntMap.map (O.apply multiply_op (Int64.of_int 10)) m
     >|= fun _ -> ()
   ]
   >>= fun () -> IntMap.values m
@@ -184,6 +205,7 @@ let tests = [
   Alcotest_lwt.test_case "No-op operations" `Quick noop_tests;
   Alcotest_lwt.test_case "Increment operations" `Quick increment_tests;
   Alcotest_lwt.test_case "Multiply operations" `Quick multiply_tests;
+  Alcotest_lwt.test_case "Many-argument operations" `Quick many_argument_tests;
   Alcotest_lwt.test_case "Batched work" `Quick test_work_batches;
 ]
 

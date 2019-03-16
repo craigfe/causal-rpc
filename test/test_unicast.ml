@@ -19,7 +19,7 @@ let test_single_rpc _switch () =
   create_client (root ^ "clientA") (root ^ "server")
   >>= fun client -> IntMap.empty ~directory:(root ^ "server") ()
   >>= fun server -> IntMap.start server
-  >>= fun () -> IntClient.rpc multiply_op (Operation.Param (Type.int64, Int64.of_int 10, Operation.Unit)) client
+  >>= fun () -> IntClient.rpc (O.apply multiply_op (Int64.of_int 10)) client
   >|= Int64.to_int
   >|= Alcotest.(check int) "Something" 10
 
@@ -27,7 +27,7 @@ let test_single_rpc _switch () =
   let rec inner n max =
     if n = max then Lwt.return_unit
     else
-      IntClient.rpc increment_op Operation.Unit client
+      IntClient.rpc (O.apply increment_op) client
       >|= Int64.to_int
       >|= Alcotest.(check int) "Something" (n+1)
       >|= (fun () -> print_endline @@ Fmt.strf "%a" Core.Time_ns.pp (Core.Time_ns.now ()))

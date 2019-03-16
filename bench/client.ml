@@ -25,7 +25,7 @@ let () =
 
   let lwt =
     create_client "/tmp/irmin/client" "/tmp/irmin/server"
-    >>= fun client -> IntClient.rpc increment_op Operation.Unit client
+    >>= fun client -> IntClient.rpc (O.apply increment_op) client
     >|= fun v -> print_string @@ Fmt.strf "Got value %Ld" v
   in
 

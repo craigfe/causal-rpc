@@ -14,3 +14,6 @@ let t =
   |+ field "params" (list Type.Boxed.irmin_t) (fun t -> t.params)
   |+ field "key" string (fun t -> t.key)
   |> sealr
+
+let of_rpc key (Operation.{name; params}: 'v Operation.rpc) =
+  {name; params; key}

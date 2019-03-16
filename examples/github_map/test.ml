@@ -22,7 +22,7 @@ let count_commit_test _ () =
   >>= (fun repos -> GithubMap.add_all repos m)
   >>= fun m -> Lwt.pick [
     worker "commit_count/test-0001";
-    GithubMap.map commit_count_op Trace_rpc.Operation.Unit m
+    GithubMap.map (O.apply commit_count_op) m
     >|= fun _ -> ()
   ]
   >|= fun _ -> ()

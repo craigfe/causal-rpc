@@ -1,11 +1,29 @@
+type (_,_) functional =
+  | Returning : 'r Type.t -> ('r, 'r) functional
+  | Curry : ('p Type.t * ('f, 'r) functional) -> ('f -> 'p, 'r) functional
+
 type (_,_) params =
   | Unit : ('v, 'v -> 'v) params
-  | Param : ('p Type.t * 'p * ('v,'a) params) -> ('v, 'p -> 'a) params
+  | Param : ('p Type.t * 'p * ('v, 'a) params)
+      -> ('v, 'p -> 'a) params
 
+type ('v, 'a, 'p) param_gen = ('p, ('v, 'a) params) functional
+
+(* Phantom type 'v encodes the inner closure of the corresponding function *)
+type 'v rpc = {
+  name: string;
+  params: Type.Boxed.t list;
+}
+
+(* A ('v, 'p, 'f) prototype contains the type information necessary to:
+   - Recurse over a function <f> with type 'p
+   - Constrain the inner closure of <f> to have type 'v -> 'v
+   - Express the type 'f of a function that encloses the parameters in an RPC
+*)
 type (_,_,_) prototype =
-  | BaseType : ('a, 'a -> 'a, ('a, 'a -> 'a) params) prototype
-  | ParamType : ('t Type.t * ('a, 'b, ('a, 'p) params) prototype)
-      -> ('a, ('t -> 'b), ('a, 't -> 'p) params) prototype
+  | BaseType : ('v, 'v -> 'v, 'v rpc) prototype
+  | ParamType : ('t Type.t * ('a, 'b, 'f) prototype)
+      -> ('a, 't -> 'b, 't -> 'f) prototype
 
 module NamedOp = struct
   type ('v, 'a, 'p) t = {
@@ -33,16 +51,13 @@ module type S = sig
   val flatten_params: (Val.t, 'a) params -> Type.Boxed.t list
   val pass_params: ?src:Logs.src -> boxed_mi -> Type.Boxed.box list -> Val.t -> Val.t
 
-  (* apply multiply_op 5 10 *)
-  (* val map: (Value.t,'a) Interface.interface -> 'a params -> t -> t Lwt.t *)
+  val apply: ('a, 'b, 'c) NamedOp.t -> 'c
 
-  (* ('v, 'a) interface -> 'a*)
-  (* val apply: ('v,'a,'p) interface -> 'a -> (('v,'a,'p) interface * ('v, 'a) params) *)
-  val return: ('a, 'a -> 'a, ('a, 'a -> 'a) params) prototype
+  val return: ('a, 'a -> 'a, 'a rpc) prototype
 
   val (@->): 't Type.t
-    -> ('a, 'b, ('a, 'p) params) prototype
-    -> ('a, ('t -> 'b), ('a, 't -> 'p) params) prototype
+    -> ('a, 'b, 'f) prototype
+    -> ('a, 't -> 'b, 't -> 'f) prototype
 
   val declare: string -> (Val.t, 'b, 'p) prototype -> (Val.t, 'b, 'p) NamedOp.t
 
@@ -96,12 +111,21 @@ module Make(T: Irmin.Contents.S): S with module Val = T = struct
   let return = BaseType
   let (@->) p f = ParamType (p, f)
 
-  (* let apply: ('v,'a) interface -> 'a -> (('v,'a) interface * ('v, 'a) params) = fun interface ->
-   *   match interface with
-   *   | Unary funtype -> let rec construct_params p = match p with
-   *       | 
-   *     in construct_params
-   *   | _ -> invalid_arg "Cannot apply complex interfaces" *)
+  (* This function takes a named operation and returns a curried function that wraps
+  the parameters for that operation into an rpc value, which can then be passed to
+     <map> or <rpc> functions.*)
+  let rec apply: type a p f. (a, p, f) NamedOp.t -> f = fun named_op ->
+    let params = ref [] in
+    let rec aux: type a p f. (a, p, f) prototype -> f = function
+      | BaseType -> {
+          name = NamedOp.name named_op;
+          params = List.rev !params
+        }
+      | ParamType (p_typ, ps_typ) -> (fun p ->
+          let boxed_param = Type.Boxed.box p_typ p in
+          params := boxed_param::(!params);
+          aux ps_typ)
+    in aux (NamedOp.typ named_op)
 
   let declare name typ: (Val.t, 'a, 'p) NamedOp.t =
     {NamedOp.name = name; NamedOp.typ = typ}

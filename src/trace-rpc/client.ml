@@ -17,8 +17,7 @@ module type S = sig
     -> t Lwt.t
 
   val rpc: ?timeout:float
-    -> (Value.t,'a,'p) Operation.NamedOp.t
-    -> (Value.t, 'a) Operation.params
+    -> Value.t Operation.rpc
     -> t -> Value.t Lwt.t
 
   val output: t -> unit Lwt.t
@@ -83,19 +82,17 @@ module Make (Store: Store.S): S with module Store = Store = struct
     >|= (fun () -> MProf.Trace.label "ClientTimeoutThread")
     >>= fun () -> Lwt.fail Exceptions.Timeout
 
-  let generate_task operation params =
-    let name = Operation.NamedOp.name operation in
-    let params = Store.Operation.flatten_params params in
-    Task.{name; params; key = "root"}
+  let task_of_rpc =
+    Task.of_rpc "root"
 
-  let rpc ?(timeout=5.0) operation params t =
+  let rpc ?(timeout=5.0) rpc t =
     let l = t.local in
-    let task = generate_task operation params in
+    let task = task_of_rpc rpc in
 
     (* Push a job onto the job queue *)
     Store.JobQueue.push (Job.Rpc (task, t.local_uri)) l
 
-    >>= fun () -> Logs_lwt.app (fun m -> m "<%s> operation issued." @@ Operation.NamedOp.name operation)
+    >>= fun () -> Logs_lwt.app (fun m -> m "<%a> operation issued." Task.pp task)
     (* Prepare to push by creating setting the watch on a thread *)
 
     >|= callback t

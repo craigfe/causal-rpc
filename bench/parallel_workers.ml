@@ -1,4 +1,5 @@
 open Lwt.Infix
+open Trace_rpc.Intmap
 
 module I = Trace_rpc.Intmap.IntPair(Trace_rpc_unix.Make)(Irmin_unix.Git.FS.G)
 include I
@@ -38,7 +39,7 @@ let maprequest threads () =
     in
 
     for _ = 1 to threads do ignore (create_worker ()) done;
-    IntMap.map ~timeout:100.0 Trace_rpc.Intmap.sleep_op (Trace_rpc.Operation.Param (Trace_rpc.Type.float, 1., Trace_rpc.Operation.Unit)) m
+    IntMap.map ~timeout:100.0 (O.apply sleep_op 1.) m
 
     >>= fun _ -> Lwt.return_unit
 

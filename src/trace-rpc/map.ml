@@ -27,7 +27,7 @@ module type S = sig
   val size: t -> int Lwt.t
   val keys: t -> key list Lwt.t
   val values: t -> Value.t list Lwt.t
-  val map: ?timeout:float -> (Value.t,'a,'p) Operation.NamedOp.t -> 'a params -> t -> t Lwt.t
+  val map: ?timeout:float -> Value.t Operation.rpc -> t -> t Lwt.t
   val start: t -> unit Lwt.t
 end
 
@@ -183,13 +183,12 @@ module Make (Store: Store.S)
     get_task_queue branch
     >|= fun (a, b) -> (List.length a) + (List.length b)
 
-  let generate_task_queue: type a p. (value, a, p) Operation.NamedOp.t -> a params -> t -> value Contents.t Lwt.t = fun operation params map ->
+  let generate_task_queue: type a p. value Operation.rpc -> t -> value Contents.t Lwt.t = fun rpc map ->
     let open Task_queue in
-    let name = Operation.NamedOp.name operation in
-    let param_list = Store.Operation.flatten_params params in
+    let task_of_key = (fun k -> Task.of_rpc k rpc) in
 
     keys map
-    >|= List.map (fun key -> {name; params = param_list; key})
+    >|= List.map task_of_key
     >>= fun ops -> Logs_lwt.app (fun m -> m "Generated task queue of [%s]"
                                     (List.map Task.show ops |> String.concat ", "))
     >|= fun () -> Task_queue (ops, []) (* Initially there are no pending operations *)
@@ -267,7 +266,7 @@ module Make (Store: Store.S)
     end else
       Logs_lwt.warn (fun m -> m "Woke up due to an irrelevant branch %s when waiting for work on %s" br_name map_name)
 
-  let map ?(timeout=5.0) operation params m =
+  let map ?(timeout=5.0) rpc m =
 
     let l = m.local in
 
@@ -298,7 +297,7 @@ module Make (Store: Store.S)
       >>= Helpers.handle_merge_conflict IrminStore.Branch.master map_name
 
       (* Generate and commit the task queue *)
-      >>= fun () -> generate_task_queue operation params m
+      >>= fun () -> generate_task_queue rpc m
       >>= fun tq -> set_task_queue tq branch
 
       (* Wait for the task queue to be empty *)
@@ -390,7 +389,6 @@ module Make (Store: Store.S)
 
     (* let t, _u = Lwt.task () in t *)
     (* Store.B.sleep 1000000.0 *)
-
 
   let () = Store.B.initialise (); (* XXX *)
 end

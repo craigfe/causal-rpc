@@ -5,6 +5,11 @@ open Intmap
 module I = IntPair (Trace_rpc_unix.Make)(Global.GitBackend)
 open I
 
+
+let id = O.apply identity_op
+let inc = O.apply increment_op
+let multiply x = O.apply multiply_op x
+
 let worker_pool ?batch_size ?two_phase switch n dir =
   let rec inner n dir =
     match n with
@@ -34,8 +39,8 @@ let test_single_phase s () =
   IntMap.empty ~directory:(root ^ "single_phase") ()
   >>= IntMap.add_all (Helpers.zip keys (List.map Int64.of_int values))
   >>= fun m -> Lwt.pick @@ (worker_pool ~two_phase:false s 4 "single_phase") @ [
-      IntMap.map ~timeout:10.0 multiply_op (Operation.Param (Type.int64, Int64.of_int 10, Operation.Unit)) m
-      >|= fun _ -> ()
+      IntMap.map ~timeout:10. (multiply (Int64.of_int 10)) m
+>|= fun _ -> ()
     ]
   >>= fun () -> IntMap.values m
   >|= List.map Int64.to_int
@@ -51,7 +56,7 @@ let test_small_map s () =
       let rec inner n = match n with
         | 10 -> Lwt.return_unit
         | n ->
-          IntMap.map ~timeout:100.0 increment_op Operation.Unit m
+          IntMap.map ~timeout:100.0 inc m
           >>= IntMap.values
           >|= List.map Int64.to_int
           >|= Alcotest.(check (list int)) "Many requests on a tiny map" [n]
@@ -70,7 +75,7 @@ let test_medium_map s () =
       let rec inner n = match n with
         | 4 -> Lwt.return_unit
         | n ->
-          IntMap.map ~timeout:100.0 increment_op Operation.Unit m
+          IntMap.map ~timeout:100.0 inc m
           >>= IntMap.values
           >|= List.map Int64.to_int
           >|= List.sort compare
@@ -89,7 +94,7 @@ let test_large_map s () =
   IntMap.empty ~directory:(root ^ "large_map") ()
   >>= IntMap.add_all (Helpers.zip keys (List.map Int64.of_int values))
   >>= fun m -> Lwt.pick @@ (worker_pool s 4 "large_map") @ [
-      IntMap.map ~timeout:10.0 multiply_op (Operation.Param (Type.int64, Int64.of_int 10, Operation.Unit)) m
+      IntMap.map ~timeout:10.0 (multiply (Int64.of_int 10)) m
       >|= fun _ -> ()
     ]
   >>= fun () -> IntMap.values m
@@ -106,7 +111,7 @@ let test_batched_work s () =
   IntMap.empty ~directory:(root ^ "batched_work") ()
   >>= IntMap.add_all (Helpers.zip keys (List.map Int64.of_int values))
   >>= fun m -> Lwt.pick @@ (worker_pool ~batch_size:4 s 4 "batched_work") @ [
-      IntMap.map ~timeout:10.0 multiply_op (Operation.Param (Type.int64, Int64.of_int 10, Operation.Unit)) m
+      IntMap.map ~timeout:10.0 (multiply (Int64.of_int 10)) m
       >|= fun _ -> ()
     ]
   >>= fun () -> IntMap.values m

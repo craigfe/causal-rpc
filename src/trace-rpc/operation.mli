@@ -1,12 +1,24 @@
 (* TODO: hide these constructors when apply is implemented *)
+type (_,_) functional =
+  | Returning : 'r Type.t -> ('r, 'r) functional
+  | Curry : ('p Type.t * ('f, 'r) functional) -> ('f -> 'p, 'r) functional
+
 type (_,_) params =
   | Unit : ('v, 'v -> 'v) params
-  | Param : ('p Type.t * 'p * ('v,'a) params) -> ('v, 'p -> 'a) params
+  | Param : ('p Type.t * 'p * ('v, 'a) params)
+      -> ('v, 'p -> 'a) params
+
+type 'v rpc = {
+  name: string;
+  params: Type.Boxed.t list;
+}
+
+type ('v, 'a, 'p) param_gen = ('p, ('v, 'a) params) functional
 
 type (_,_,_) prototype =
-  | BaseType : ('a, 'a -> 'a, ('a, 'a -> 'a) params) prototype
-  | ParamType : ('t Type.t * ('a, 'b, ('a, 'p) params) prototype)
-      -> ('a, ('t -> 'b), ('a, 't -> 'p) params) prototype
+  | BaseType : ('v, 'v -> 'v, 'v rpc) prototype
+  | ParamType : ('t Type.t * ('a, 'b, 'f) prototype)
+      -> ('a, 't -> 'b, 't -> 'f) prototype
 
 module NamedOp: sig
   type ('v, 'a, 'p) t
@@ -40,12 +52,12 @@ module type S = sig
   (* Take a list of parameters and apply them to a function *)
   val pass_params: ?src:Logs.src -> boxed_mi -> Type.Boxed.box list -> Val.t -> Val.t
 
-  (* val apply: ('v,'a) interface -> 'a -> (('v,'a) interface * ('v, 'a) params) *)
-  val return: ('a, 'a -> 'a, ('a, 'a -> 'a) params) prototype
+  val apply: ('v, 'a, 'p) NamedOp.t -> 'p
+  val return: ('a, 'a -> 'a, 'a rpc) prototype
 
   val (@->): 't Type.t
-    -> ('a, 'b, ('a, 'p) params) prototype
-    -> ('a, ('t -> 'b), ('a, 't -> 'p) params) prototype
+    -> ('v, 'a, 'p) prototype
+    -> ('v, 't -> 'a, 't -> 'p) prototype
   (** Combinator for describing functional types *)
 
   val declare: string -> (Val.t, 'b, 'p) prototype -> (Val.t, 'b, 'p) NamedOp.t

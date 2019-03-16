@@ -29,7 +29,7 @@ let test_single_rpc () =
     if n = max then Lwt.return_unit
     else
       let init = Core.Time_ns.now () in
-      IntClient.rpc increment_op Operation.Unit client
+      IntClient.rpc (O.apply increment_op) client
         >|= (fun _ -> let final = Core.Time_ns.now () in
               let span = Core.Time_ns.abs_diff init final in
               let (_, _, major_words) = Gc.counters () in
