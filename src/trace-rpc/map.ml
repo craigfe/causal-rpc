@@ -342,12 +342,14 @@ module Make (Store: Store.S)
     (* The callback wakes up a thread on our queue *)
     let watch_callback (br_name: IrminStore.branch) (_: IrminStore.commit Irmin.diff) =
       let () = MProf.Trace.label "ServerWatchCallback" in
-      IrminStore.of_branch (IrminStore.repo l) br_name
-      >>= fun local -> Store.JobQueue.pop local
+
+      Logs_lwt.err (fun m -> m "Callback triggered")
+      >>= fun () -> IrminStore.of_branch (IrminStore.repo l) br_name
+      >>= fun local -> Store.JobQueue.peek_tree local
       >>= function
-      | Error msg -> Logs_lwt.err (fun m -> m "Error <%s> when attempting to pop from job queue on branch %s" msg br_name)
-      | Ok Job.MapJob _ -> Lwt.return_unit
-      | Ok Job.Rpc (t, remote) ->
+      | None  -> Lwt.return_unit (* Logs_lwt.err (fun m -> m "Error <%s> when attempting to pop from job queue on branch %s" msg br_name) *)
+      | Some (Job.MapJob _, _) -> Lwt.return_unit
+      | Some (Job.Rpc (t, remote), tree) ->
 
         let boxed_mi () = (match I.find_operation_opt t.name Impl.api with
             | Some operation -> operation
@@ -360,9 +362,8 @@ module Make (Store: Store.S)
         Ex.execute_task (boxed_mi ()) t.params old_val
 
         (* Commit value to store *)
-        >>= fun new_val -> IrminStore.set local ["val"]
-          ~info:(Store.B.make_info ~author:"server" "%a" pp_task t) (Value new_val)
-
+        >>= fun new_val -> IrminStore.Tree.add tree ["val"] (Value new_val)
+        >>= IrminStore.set_tree ~info:(Store.B.make_info ~author:"server" "%a" pp_task t) local []
         >>= (function
             | Ok () -> Lwt.return_unit
             | Error se -> Lwt.fail @@ Store.Store_error se)
@@ -375,11 +376,21 @@ module Make (Store: Store.S)
         >>= fun remote -> Sync.push local remote
         >>= (function
             | Ok () -> Lwt.return_unit
-            | Error pe -> Lwt.fail @@ Store.Push_error pe)
+            | Error pe -> Lwt.fail @@ Store.Push_error pe) in
 
 
-    in let _ = IrminStore.Branch.watch_all (IrminStore.repo l) watch_callback in
-    Lwt.return_unit
+    (* Setup the callback, then keep yielding to it *)
+    let _watch = IrminStore.Branch.watch_all (IrminStore.repo l) watch_callback in
+
+    (* XXX: Silly hack *)
+    let rec inner () =
+      Lwt.pause ()
+      >>= inner
+    in inner ()
+
+    (* let t, _u = Lwt.task () in t *)
+    (* Store.B.sleep 1000000.0 *)
+
 
   let () = Store.B.initialise (); (* XXX *)
 end

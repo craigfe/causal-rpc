@@ -18,8 +18,8 @@ module type S = sig
     val is_empty: IrminStore.t -> bool Lwt.t
     val push: Job.t -> IrminStore.t -> unit Lwt.t
     val pop: IrminStore.t -> (Job.t, string) result Lwt.t
-    val pop_silent: IrminStore.t -> (Job.t * Job.t list) Lwt.t
     val peek_opt: IrminStore.t -> Job.t option Lwt.t
+    val peek_tree: IrminStore.t -> (Job.t * IrminStore.tree) option Lwt.t
   end
 
   module JobQueue: JOB_QUEUE 

@@ -22,8 +22,8 @@ module type S = sig
     val is_empty: IrminStore.t -> bool Lwt.t
     val push: Job.t -> IrminStore.t -> unit Lwt.t
     val pop: IrminStore.t -> (Job.t, string) result Lwt.t
-    val pop_silent: IrminStore.t -> (Job.t * Job.t list) Lwt.t
     val peek_opt: IrminStore.t -> Job.t option Lwt.t
+    val peek_tree: IrminStore.t -> (Job.t * IrminStore.tree) option Lwt.t
   end
 
   module JobQueue: JOB_QUEUE
@@ -55,8 +55,8 @@ module Make
     val is_empty: B.Store.t -> bool Lwt.t
     val push: Job.t -> B.Store.t -> unit Lwt.t
     val pop: B.Store.t -> (Job.t, string) result Lwt.t
-    val pop_silent: B.Store.t -> (Job.t * Job.t list) Lwt.t
     val peek_opt: B.Store.t -> Job.t option Lwt.t
+    val peek_tree: B.Store.t -> (Job.t * B.Store.tree) option Lwt.t
   end
 
   module IrminStore = B.Store
@@ -98,16 +98,16 @@ module Make
         | Error _ -> Error "Store_error")
       | Error e -> Lwt.return @@ Error e
 
-    let pop_silent m =
-      of_map m
-      >|= Job_queue.pop
-      >|= function
-      | Ok (j, js) -> (j, js)
-      | Error _ -> raise Empty_queue
-
     let peek_opt m =
       of_map m
       >|= Job_queue.peek_opt
+
+    let peek_tree m =
+      of_map m
+      >>= function
+      | [] -> Lwt.return None
+      | (h::ts) -> IrminStore.Tree.(add empty ["job_queue"] (Job_queue ts))
+        >>= fun tree -> Lwt.return @@ Some (h, tree)
   end
 
   module Operation = Operation.Make(Desc.Val)
