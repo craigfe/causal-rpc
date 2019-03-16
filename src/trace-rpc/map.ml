@@ -383,10 +383,10 @@ module Make (Store: Store.S)
     let _watch = IrminStore.Branch.watch_all (IrminStore.repo l) watch_callback in
 
     (* XXX: Silly hack *)
-    let rec inner () =
-      Lwt.pause ()
-      >>= inner
-    in inner ()
+    Lwt.pause ()
+    (* let rec inner () =
+     *   >>= inner
+     * in inner () *)
 
     (* let t, _u = Lwt.task () in t *)
     (* Store.B.sleep 1000000.0 *)
