@@ -1,4 +1,3 @@
-
 type 'a t
 
 (* An equality test on two values of type 'a *)
@@ -16,6 +15,8 @@ val string: string t
 val unit: unit t
 
 (** Basic combinators *)
+val pair: 'a t -> 'b t -> ('a * 'b) t
+val triple: 'a t -> 'b t -> 'c t -> ('a * 'b * 'c) t
 val array: 'a t -> 'a array t
 val list: 'a t -> 'a list t
 val option: 'a t -> 'a option t

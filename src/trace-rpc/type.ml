@@ -15,6 +15,8 @@ type _ t =
   | Int64     : int64 t
   | String    : string t
   | Unit      : unit t
+  | Pair      : 'a t * 'b t -> ('a * 'b) t
+  | Triple    : 'a t * 'b t * 'c t -> ('a * 'b * 'c) t
   | Array     : 'a t -> 'a array t
   | List      : 'a t -> 'a list t
   | Option    : 'a t -> 'a option t
@@ -69,6 +71,12 @@ module Equal = struct
     | Error e1, Error e2 -> e_comp e1 e2
     | _ -> false
 
+  let pair l_comp r_comp (l, r) (l', r')
+    = (l_comp l l') && (r_comp r r')
+
+  let triple l_comp m_comp r_comp (l, m, r) (l', m', r')
+    = (l_comp l l') && (m_comp m m') && (r_comp r r')
+
   let rec t: type a. a t -> a equal = function
     | Unit   -> (=)
     | Bool   -> (=)
@@ -79,6 +87,8 @@ module Equal = struct
     | Int32  -> (=)
     | Int64  -> (=)
     | String -> String.equal
+    | Pair (l, r) -> pair (t l) (t r)
+    | Triple (l, m, r) -> triple (t l) (t m) (t r)
     | Array a -> array (t a)
     | List l  -> list (t l)
     | Option o -> option (t o)
@@ -94,6 +104,8 @@ let int    = Int
 let int32  = Int32
 let int64  = Int64
 let string = String
+let pair l r = Pair (l, r)
+let triple l m r = Triple (l, m, r)
 let array t = Array t
 let list t = List t
 let option t = Option t
@@ -113,6 +125,8 @@ module Boxed = struct
     | Int64 of int64
     | String of string
     | Unit of unit
+    | Pair of box * box
+    | Triple of box * box * box
     | Array of box array
     | List of box list
     | Option of box option
@@ -121,8 +135,8 @@ module Boxed = struct
   let irmin_t = let open Irmin.Type in
     mu (fun x -> variant "irmin_t"
            (fun bool bytes char float int int32
-             int64 string unit array list option
-             result -> function
+             int64 string unit pair triple array
+             list option result -> function
              | Bool b -> bool b
              | Bytes b -> bytes b
              | Char c -> char c
@@ -132,6 +146,8 @@ module Boxed = struct
              | Int64 i -> int64 i
              | String s -> string s
              | Unit u -> unit u
+             | Pair (l, r) -> pair (l, r)
+             | Triple (l, m, r) -> triple (l, m, r)
              | Array a -> array a
              | List l -> list l
              | Option o -> option o
@@ -145,6 +161,8 @@ module Boxed = struct
                  |~ case1 "Int64" int64 (fun i -> Int64 i)
                  |~ case1 "String" string (fun u -> String u)
                  |~ case1 "Unit" unit (fun u -> Unit u)
+                 |~ case1 "Pair" (pair x x) (fun (l, r) -> Pair (l, r))
+                 |~ case1 "Triple" (triple x x x) (fun (l, m, r) -> Triple (l, m, r))
                  |~ case1 "Array" (array x) (fun a -> Array a)
                  |~ case1 "List" (list x) (fun l -> List l)
                  |~ case1 "Option" (option x) (fun o -> Option o)
@@ -163,6 +181,8 @@ module Boxed = struct
     | Unit () -> Fmt.pf ppf "Unit ()"
 
     (* TODO *)
+    | Pair (_, _) -> invalid_arg "unsupported pretty printer"
+    | Triple (_, _, _) -> invalid_arg "unsupported pretty printer"
     | Array _ -> invalid_arg "unsupported pretty printer"
     | List _ -> invalid_arg "unsupported pretty printer"
     | Result _ -> invalid_arg "unsupported pretty printer"
@@ -182,12 +202,16 @@ module Boxed = struct
     | Int32 -> (fun i -> Int32 i)
     | Int64 -> (fun i -> Int64 i)
     | String -> (fun s -> String s)
+    | Pair (l, r) -> (fun (lv, rv) ->
+        Pair ((box l) lv, (box r) rv))
+    | Triple (l, m, r) -> (fun (lv, mv, rv) ->
+        Triple ((box l) lv, (box m) mv, (box r) rv))
     | Array elt -> (fun a -> Array (Array.map (box elt) a))
     | List elt -> (fun l -> List (List.map (box elt) l))
-    | Result (a, b) -> (fun r -> match r with
+    | Result (a, b) -> (function
         | Ok o -> Result (Ok (box a o))
         | Error e -> Result (Error (box b e)))
-    | Option opt -> (fun o -> match o with
+    | Option opt -> (function
         | Some s -> Option (Some (box opt s))
         | None -> Option None)
 
