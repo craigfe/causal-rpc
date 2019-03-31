@@ -21,9 +21,22 @@ val array: 'a t -> 'a array t
 val list: 'a t -> 'a list t
 val option: 'a t -> 'a option t
 val result: 'a t -> 'b t -> ('a, 'b) result t
+val mu: ('a t -> 'a t) -> 'a t
 
-type (_, _) eq = Eq: ('a, 'a) eq
-val refl: 'a t -> 'b t -> ('a, 'b) eq option
+type ('a, 'b) case_set
+type 'a case_v
+type ('a, 'b, 'c) open_variant
+
+val case0: string -> 'a -> ('a, 'a case_v) case_set
+val case1: string -> 'b t -> ('b -> 'a) -> ('a, 'b -> 'a case_v) case_set
+val sealv: ('a, 'b, 'a -> 'a case_v) open_variant -> 'a t
+val variant: string -> 'b -> ('a, 'b, 'b) open_variant
+
+val (|~):
+  ('a, 'b, 'c -> 'd) open_variant -> ('a, 'c) case_set -> ('a, 'b, 'd) open_variant
+
+(* type (_, _) eq = Eq: ('a, 'a) eq *)
+(* val refl: 'a t -> 'b t -> ('a, 'b) eq option *)
 val equal: 'a t -> 'a equal
 
 module Boxed : sig

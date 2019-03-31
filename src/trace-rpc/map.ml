@@ -27,7 +27,7 @@ module type S = sig
   val size: t -> int Lwt.t
   val keys: t -> key list Lwt.t
   val values: t -> Value.t list Lwt.t
-  val map: ?timeout:float -> Value.t Operation.rpc -> t -> t Lwt.t
+  val map: ?timeout:float -> Value.t Remote.t -> t -> t Lwt.t
   val start: t -> unit Lwt.t
 end
 
@@ -183,7 +183,7 @@ module Make (Store: Store.S)
     get_task_queue branch
     >|= fun (a, b) -> (List.length a) + (List.length b)
 
-  let generate_task_queue: type a p. value Operation.rpc -> t -> value Contents.t Lwt.t = fun rpc map ->
+  let generate_task_queue: type a p. value Remote.rpc -> t -> value Contents.t Lwt.t = fun rpc map ->
     let open Task_queue in
     let task_of_key = (fun k -> Task.of_rpc k rpc) in
 
@@ -269,6 +269,9 @@ module Make (Store: Store.S)
   let map ?(timeout=5.0) rpc m =
 
     let l = m.local in
+    let rpc = match Remote.get_rpc_opt rpc with
+      | Some r -> r
+      | None -> invalid_arg "Map operation must be invoked with single operation" in
 
     (* If the map is currently empty, don't bother issuing an operation *)
     is_empty m
@@ -348,21 +351,28 @@ module Make (Store: Store.S)
       >>= function
       | None  -> Lwt.return_unit (* Logs_lwt.err (fun m -> m "Error <%s> when attempting to pop from job queue on branch %s" msg br_name) *)
       | Some (Job.MapJob _, _) -> Lwt.return_unit
-      | Some (Job.Rpc (t, remote), tree) ->
-
-        let boxed_mi () = (match I.find_operation_opt t.name Impl.api with
-            | Some operation -> operation
-            | None -> invalid_arg "Operation not found") in
+      | Some (Job.Rpc (ts, remote), tree) ->
 
         (* Found a pending RPC task *)
         IrminStore.get local ["val"]
         >>= (function Value v -> Lwt.return v | _ -> raise E.Internal_type_error)
         >>= fun old_val -> let () = MProf.Trace.label "ServerTaskExecute" in
+
+        let rec taskexec (old_val, tree) t =
+
+          let boxed_mi () = (match I.find_operation_opt t.name Impl.api with
+              | Some operation -> operation
+              | None -> invalid_arg "Operation not found") in
+
         Ex.execute_task (boxed_mi ()) t.params old_val
 
         (* Commit value to store *)
         >>= fun new_val -> IrminStore.Tree.add tree ["val"] (Value new_val)
-        >>= IrminStore.set_tree ~info:(Store.B.make_info ~author:"server" "%a" pp_task t) local []
+        >|= fun new_tree -> (new_val, new_tree)
+
+        in  Lwt_list.fold_left_s taskexec (old_val, tree) ts
+
+        >>= fun (_finalval, tree) -> IrminStore.set_tree ~info:(Store.B.make_info ~author:"server" "%a" (Fmt.list pp_task) ts) local [] tree
         >>= (function
             | Ok () -> Lwt.return_unit
             | Error se -> Lwt.fail @@ Store.Store_error se)

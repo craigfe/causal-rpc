@@ -7,11 +7,11 @@ module type IMPL_MAKER = sig
   type 'i t
   (** The type of implementations of functions from type 'a to 'a *)
 
-  val (@): ((Op.Val.t, 'a, 'p) NamedOp.t * 'a)
+  val (@): ((Op.Val.t, 'a, 'p, 'd) NamedOp.t * 'a)
     -> (Op.Val.t, 'b) implementation
     -> (Op.Val.t, 'a * 'b) implementation
 
-  val finally: ((Op.Val.t, 'a, 'p) NamedOp.t * 'a) -> (Op.Val.t, 'a) implementation
+  val finally: ((Op.Val.t, 'a, 'p, 'd) NamedOp.t * 'a) -> (Op.Val.t, 'a) implementation
 
   val define: (Op.Val.t, 'i) Operation.implementation -> 'i t
   (** Construct an RPC implementation from a list of pairs of operations and

@@ -84,7 +84,7 @@ let test_medium_map s () =
 
           >>= fun () -> inner (n + 1)
       in inner 1
-    ]
+   ]
 
 
 let test_large_map s () =

@@ -13,7 +13,7 @@ module type S = sig
     -> t Lwt.t
 
   val rpc: ?timeout:float
-    -> Value.t Operation.rpc
+    -> Value.t Remote.t
     -> t -> Value.t Lwt.t
 
   val output: t -> unit Lwt.t

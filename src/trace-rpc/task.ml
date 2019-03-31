@@ -15,5 +15,5 @@ let t =
   |+ field "key" string (fun t -> t.key)
   |> sealr
 
-let of_rpc key (Operation.{name; params}: 'v Operation.rpc) =
+let of_rpc key (Remote.{name; params}: 'v Remote.rpc) =
   {name; params; key}

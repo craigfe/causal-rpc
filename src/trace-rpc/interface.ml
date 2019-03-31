@@ -8,11 +8,11 @@ module type IMPL_MAKER = sig
   type 'i t
   (** The type of implementations with type structure 'i from type 'a to 'a *)
 
-  val (@): ((Op.Val.t, 'a, 'p) NamedOp.t * 'a)
+  val (@): ((Op.Val.t, 'a, 'p, 'd) NamedOp.t * 'a)
     -> (Op.Val.t, 'b) implementation
     -> (Op.Val.t, 'a * 'b) implementation
 
-  val finally: ((Op.Val.t, 'a, 'p) NamedOp.t * 'a) -> (Op.Val.t, 'a) implementation
+  val finally: ((Op.Val.t, 'a, 'p, 'd) NamedOp.t * 'a) -> (Op.Val.t, 'a) implementation
 
   val define: (Op.Val.t,'i) implementation -> 'i t
   (** Construct an RPC implementation from a list of pairs of operations and
@@ -32,7 +32,7 @@ module MakeImplementation(T: Irmin.Contents.S): IMPL_MAKER
      with string parameters *)
   type 'i t = (string, Op.boxed_mi) Hashtbl.t
 
-  let finally: type a p. ((Op.Val.t, a, p) NamedOp.t * a) -> (Op.Val.t, a) implementation =
+  let finally: type a p. ((Op.Val.t, a, p, 'd) NamedOp.t * a) -> (Op.Val.t, a) implementation =
     fun (prototype, operation) -> (Unary prototype, operation)
 
   (* Combine two implementations by aggregating the prototypes and storing the

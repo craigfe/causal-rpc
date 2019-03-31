@@ -17,7 +17,7 @@ module type S = sig
     -> t Lwt.t
 
   val rpc: ?timeout:float
-    -> Value.t Operation.rpc
+    -> Value.t Remote.t
     -> t -> Value.t Lwt.t
 
   val output: t -> unit Lwt.t
@@ -87,12 +87,12 @@ module Make (Store: Store.S): S with module Store = Store = struct
 
   let rpc ?(timeout=5.0) rpc t =
     let l = t.local in
-    let task = task_of_rpc rpc in
+    let ts = List.map task_of_rpc rpc in
 
     (* Push a job onto the job queue *)
-    Store.JobQueue.push (Job.Rpc (task, t.local_uri)) l
+    Store.JobQueue.push (Job.Rpc (ts, t.local_uri)) l
 
-    >>= fun () -> Logs_lwt.app (fun m -> m "<%a> operation issued." Task.pp task)
+    >>= fun () -> Logs_lwt.app (fun m -> m "<%a> operation issued." (Fmt.list Task.pp) ts)
     (* Prepare to push by creating setting the watch on a thread *)
 
     >|= callback t
