@@ -5,6 +5,8 @@ module type S = sig
   type t
   (** A client *)
 
+  val clear_caches: t -> unit Lwt.t
+
   val empty: ?directory:string
     -> remote_uri:string
     -> local_uri:string

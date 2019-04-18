@@ -9,6 +9,8 @@ module type S = sig
   type t
   (** A client *)
 
+  val clear_caches: t -> unit Lwt.t
+
   val empty: ?directory:string
     -> remote_uri:string
     -> local_uri:string
@@ -40,6 +42,10 @@ module Make (Store: Store.S): S with module Store = Store = struct
     remote: Irmin.remote;
     name: IStore.branch (* The name of the branch that belongs to us *)
   }
+
+  let clear_caches t =
+    IStore.get_tree t.local []
+    >|= IStore.Tree.clear_caches
 
   let generate_random_directory () =
     Helpers.generate_rand_string ~length:20 ()
