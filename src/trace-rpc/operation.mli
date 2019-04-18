@@ -1,14 +1,7 @@
 (* TODO: hide these constructors when apply is implemented *)
 
-type (_,_) params =
-  | Unit : ('v, 'v -> 'v) params
-  | Param : ('p Type.t * 'p * ('v, 'a) params)
-      -> ('v, 'p -> 'a) params
-
-type (_,_,_,_) prototype =
-  | BaseType : ('v, 'v -> 'v, 'v Remote.t, 'v Remote.rpc) prototype
-  | ParamType : ('t Type.t * ('a, 'b, 'c, 'd) prototype)
-      -> ('a, 't -> 'b, 't -> 'c, 't -> 'd) prototype
+type (_,_) params
+type (_,_,_,_) prototype
 
 module NamedOp: sig
   type ('v, 'a, 'p, 'd) t
@@ -40,11 +33,12 @@ module type S = sig
   val flatten_params: (Val.t, 'a) params -> Type.Boxed.t list
 
   (* Take a list of parameters and apply them to a function *)
-  val pass_params: ?src:Logs.src -> boxed_mi -> Type.Boxed.box list -> Val.t -> Val.t
+  val pass_params: ?src:Logs.src -> boxed_mi -> Type.Boxed.box list -> Val.t -> Val.t Lwt.t
 
   val apply: ('v, 'a, 'p, 'd) NamedOp.t -> 'p
   val app: ('v, 'a, 'p, 'd) NamedOp.t -> 'd
   val return: ('a, 'a -> 'a, 'a Remote.t, 'a Remote.rpc) prototype
+  val return_lwt: ('a, 'a -> 'a Lwt.t, 'a Remote.t, 'a Remote.rpc) prototype
 
   val (@->): 't Type.t
     -> ('v, 'a, 'p, 'd) prototype

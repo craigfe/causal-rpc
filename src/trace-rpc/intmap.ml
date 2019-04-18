@@ -37,7 +37,9 @@ module Implementation: Interface.IMPL with type Val.t = int64 = struct
 
   let identity x = x
   let increment x = Int64.add Int64.one x
-  let sleep f x = (Unix.sleepf f; increment x)
+  let sleep f x =
+    (* let time = f * (Random.float 0.1 + 0.95) in *)
+    (Unix.sleepf f; increment x)
 
   let multiply = Int64.mul
 

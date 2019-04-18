@@ -15,8 +15,5 @@ module Make(I: Interface.IMPL_MAKER): S with module I = I = struct
      * Lwt_preemptive.init thread_count thread_count log *)
 
   let execute_task ?src boxed_mi params old_value =
-    let func = fun () -> I.Op.pass_params ?src boxed_mi params old_value in
-
-    Lwt.return (func ())
-    (* Lwt_preemptive.detach func () *)
+    (I.Op.pass_params ?src boxed_mi params) old_value
   end

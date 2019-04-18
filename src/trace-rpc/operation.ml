@@ -14,6 +14,7 @@ type (_,_) params =
 *)
 type (_,_,_,_) prototype =
   | BaseType : ('v, 'v -> 'v, 'v Remote.t, 'v Remote.rpc) prototype
+  | BaseLwt : ('v, 'v -> 'v Lwt.t, 'v Remote.t, 'v Remote.rpc) prototype
   | ParamType : ('t Type.t * ('a, 'b, 'f, 'd) prototype)
       -> ('a, 't -> 'b, 't -> 'f, 't -> 'd) prototype
 
@@ -41,12 +42,13 @@ module type S = sig
   type boxed_mi = | E: ('a, 'p, 'd) matched_implementation -> boxed_mi
 
   val flatten_params: (Val.t, 'a) params -> Type.Boxed.t list
-  val pass_params: ?src:Logs.src -> boxed_mi -> Type.Boxed.box list -> Val.t -> Val.t
+  val pass_params: ?src:Logs.src -> boxed_mi -> Type.Boxed.box list -> Val.t -> Val.t Lwt.t
 
   val apply: ('a, 'b, 'c, 'd) NamedOp.t -> 'c
   val app:   ('a, 'b, 'c, 'd) NamedOp.t -> 'd
 
   val return: ('a, 'a -> 'a, 'a Remote.t, 'a Remote.rpc) prototype
+  val return_lwt: ('a, 'a -> 'a Lwt.t, 'a Remote.t, 'a Remote.rpc) prototype
 
   val (@->): 't Type.t
     -> ('a, 'b, 'c, 'd) prototype
@@ -71,20 +73,22 @@ module Make(T: Irmin.Contents.S): S with module Val = T = struct
 
   (* We have a function of type (param -> ... -> param -> val -> val).
      Here we take the parameters that were passed as part of the RPC and recursively apply them
-     to the function implementation until we are left with a function of type (val -> val). *)
+     to the function implementation until we are left with a function of type (val -> val (Lwt.t)). *)
   let pass_params ?src boxed_mi params =
     match boxed_mi with
     | E matched_impl ->
       let (unboxed, func) = matched_impl in
       let func_type = NamedOp.typ unboxed in
+      let too_many_params () =
+        raise @@ Exceptions.Malformed_params "Too many parameters" in
 
       (* We take a function type and a function _of that type_, and recursively apply parameters
-         to the function until it reaches 'BaseType', i.e. val -> val *)
+         to the function until it reaches 'BaseType', i.e. val -> val (Lwt.t) *)
       let rec aux: type a p d.
         (Val.t, a, p, d) prototype
         -> a
         -> Type.Boxed.t list
-        -> (Val.t -> Val.t) = fun func_type func params ->
+        -> (Val.t -> Val.t Lwt.t) = fun func_type func params ->
 
         match func_type with
         | BaseType -> (Logs.debug ?src (fun m -> m "Reached base type"); match params with
@@ -92,16 +96,21 @@ module Make(T: Irmin.Contents.S): S with module Val = T = struct
               Logs.debug ?src (fun m -> m "Executing val -> val level function");
               let v = func x in
               Logs.debug ?src (fun m -> m "Function execution complete");
-              v)
-          | _ -> raise @@ Exceptions.Malformed_params "Too many parameters")
+              Lwt.return v)
+          | _ -> too_many_params ())
+
+        | BaseLwt -> (Logs.debug ?src (fun m -> m "Reached base Lwt thread"); match params with
+          | [] -> func
+          | _ -> too_many_params ())
 
         | ParamType (typ, nested_type) -> (Logs.debug ?src (fun m -> m "Nested type"); match params with
           | (x::xs) -> aux nested_type (func (Type.Boxed.unbox typ x)) xs
-          | [] -> raise @@ Exceptions.Malformed_params "Not enough parameters")
+          | [] -> too_many_params ())
 
       in aux func_type func params
 
   let return = BaseType
+  let return_lwt = BaseLwt
   let (@->) p f = ParamType (p, f)
 
   (* This function takes a named operation and returns a curried function that wraps
@@ -111,6 +120,10 @@ module Make(T: Irmin.Contents.S): S with module Val = T = struct
     let params = ref [] in
     let rec aux: type a p f d. (a, p, f, d) prototype -> f = function
       | BaseType -> Remote.(pure {
+          name = NamedOp.name named_op;
+          params = List.rev !params
+        })
+      | BaseLwt -> Remote.(pure {
           name = NamedOp.name named_op;
           params = List.rev !params
         })
@@ -127,6 +140,10 @@ module Make(T: Irmin.Contents.S): S with module Val = T = struct
     let params = ref [] in
     let rec aux: type a p f d. (a, p, f, d) prototype -> d = function
       | BaseType -> Remote.{
+          name = NamedOp.name named_op;
+          params = List.rev !params
+        }
+      | BaseLwt -> Remote.{
           name = NamedOp.name named_op;
           params = List.rev !params
         }

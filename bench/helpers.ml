@@ -14,3 +14,11 @@ let sequence_list lower upper =
     | n when n = lower -> lower::acc
     | n                -> helper (n-1) (n::acc)
   in helper upper []
+
+(* Convert two lists to a list of pairs *)
+let zip list1 list2 =
+  let rec inner l1 l2 acc = match l1, l2 with
+    | [], [] -> acc
+    | x::xs, y::ys -> inner xs ys ((x, y)::acc)
+    | _ -> invalid_arg "Lists do not have the same length"
+  in inner list1 list2 []
