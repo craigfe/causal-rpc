@@ -1,3 +1,5 @@
+module Intmap = Intmap
+
 module Make (GitImpl: Irmin_git.G) (Contents: Irmin.Contents.S): Trace_rpc.Backend.S
   with type Store.contents = Contents.t
    and type Store.branch = string
