@@ -1,3 +1,3 @@
-(executable
-  (name        server)
-  (libraries   trace_rpc))
+(executables
+  (names        server worker work_cluster)
+  (libraries    trace-rpc-unix))

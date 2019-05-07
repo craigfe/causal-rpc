@@ -27,7 +27,7 @@ module type S = sig
   val size: t -> int Lwt.t
   val keys: t -> key list Lwt.t
   val values: t -> Value.t list Lwt.t
-  val map: ?timeout:float -> Value.t Remote.t -> t -> t Lwt.t
+  val map: ?timeout:float -> ?polling:bool -> Value.t Remote.t -> t -> t Lwt.t
   val start: t -> unit Lwt.t
 end
 
@@ -240,7 +240,7 @@ module Make (Store: Store.S)
       >>= (function
           | Some (Job.MapJob m) when String.equal map_name m ->
 
-            Logs_lwt.debug (fun m -> m "Resetting count due to activity on branch %s" br_name)
+            Logs_lwt.info (fun m -> m "Resetting count due to activity on branch %s" br_name)
 
             (* Merge the work from this branch *)
             >>= fun () -> IrminStore.merge_with_branch branch
@@ -252,7 +252,7 @@ module Make (Store: Store.S)
             >>= fun () -> task_queue_is_empty branch
             >>= (function
                 | true ->
-                  Logs_lwt.err (fun m -> m "TRIGGERING THE CALLBACK.\n br_name: %s \n map_name: %s" br_name map_name)
+                  Logs_lwt.debug (fun m -> m "TRIGGERING THE CALLBACK.\n br_name: %s \n map_name: %s" br_name map_name)
                   >>= fun () -> Lwt.return (Lwt.wakeup callback ()) (* We are done *)
                 | false -> Lwt.return_unit) (* Wait for the next callback *)
 
@@ -264,9 +264,10 @@ module Make (Store: Store.S)
                       (fun m -> m "Woke up due to branch %s, but there is no job on this branch" br_name))
 
     end else
-      Logs_lwt.warn (fun m -> m "Woke up due to an irrelevant branch %s when waiting for work on %s" br_name map_name)
+      Logs_lwt.debug (fun m -> m "Woke up due to an irrelevant branch %s when waiting for work on %s" br_name map_name)
 
-  let map ?(timeout=5.0) rpc m =
+  let map ?(timeout=5.0) ?(polling=false) rpc m =
+    let () = Store.B.initialise () in
 
     let l = m.local in
     let rpc = match Remote.get_rpc_opt rpc with
@@ -308,9 +309,27 @@ module Make (Store: Store.S)
       >>= fun (wait, callback_thread) ->
 
       let repo = IrminStore.repo l in
-      IrminStore.Branch.watch_all repo (irmin_map_watch_callback ~repo ~branch wait map_name)
+      Logs_lwt.info (fun m -> m "Setting the callback thread")
+      >>= fun () -> IrminStore.Branch.watch_all repo (irmin_map_watch_callback ~repo ~branch wait map_name)
+      >>= fun watch ->
 
-      >>= fun watch -> Lwt.pick [(callback_thread >>= fun () -> IrminStore.unwatch watch); timeout_thread timeout]
+      let rec loop () =
+        Store.B.sleep 0.001
+        >>= fun () -> Logs_lwt.debug (fun m -> m "Polling")
+        >>= fun () -> IrminStore.Branch.list repo
+        >|= List.filter (fun n -> String.length n > 8 && String.sub n 0 8 |> String.equal "worker--")
+        >>= Lwt_list.map_s (fun br_name ->
+            IrminStore.merge_with_branch branch
+            ~info:(Store.B.make_info ~author:"map" "Merged work from %s into %s" br_name map_name) br_name)
+
+        >>= fun _results -> task_queue_is_empty branch
+        >>= function
+        | true -> Lwt.return_unit
+        | false -> loop ()
+      in
+
+      Lwt.pick ([(callback_thread >>= fun () -> IrminStore.unwatch watch); timeout_thread timeout] @
+                (if polling then [loop ()] else []))
 
       (* Sanity check that the callback was only triggered after the queue is empty *)
       >>= fun () -> task_queue_is_empty branch
@@ -330,7 +349,7 @@ module Make (Store: Store.S)
          will need to be cleverer to avoid popping off the wrong job here *)
       >>= fun j -> (match j with
           | Ok (Job.MapJob m) when m = map_name -> Lwt.return_unit
-          | Ok j -> Lwt.fail_with (Fmt.strf "Expected to pop %a, but actually popped %a" Job.pp (Job.MapJob map_name) Job.pp j)
+          | Ok j ->      Lwt.fail_with (Fmt.strf "Expected to pop %a, but actually popped %a" Job.pp (Job.MapJob map_name) Job.pp j)
           | Error msg -> Lwt.fail_with (Fmt.strf "Error <%s> when attempting to remove %a from the job queue" msg Job.pp (Job.MapJob map_name)))
 
       >>= (fun _ -> Logs_lwt.app @@ fun m -> m "Map operation complete. Branch name %s" map_name)
@@ -345,7 +364,7 @@ module Make (Store: Store.S)
     let watch_callback (br_name: IrminStore.branch) (_: IrminStore.commit Irmin.diff) =
       let () = MProf.Trace.label "ServerWatchCallback" in
 
-      Logs_lwt.err (fun m -> m "Callback triggered")
+      Logs_lwt.debug (fun m -> m "Callback triggered")
       >>= fun () -> IrminStore.of_branch (IrminStore.repo l) br_name
       >>= fun local -> Store.JobQueue.peek_tree local
       >>= function
@@ -377,8 +396,7 @@ module Make (Store: Store.S)
             | Ok () -> Lwt.return_unit
             | Error se -> Lwt.fail @@ Store.Store_error se)
 
-        (* Merge into master *)
-        (* TODO *)
+        (* TODO: Merge into master *)
 
         (* Push back to the client *)
         >>= fun () -> Store.upstream ~uri:remote ~branch:br_name

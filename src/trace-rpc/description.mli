@@ -7,11 +7,13 @@ module Make(V: Irmin.Contents.S): sig
   type 'i t
   (** The type of descriptions over type 'a *)
 
+  val finally: (Op.Val.t, 'a, 'p, 'd) NamedOp.t -> (Op.Val.t, 'a) interface
+  (** Construct an RPC interface from a single operation *)
+
   val (@): (Op.Val.t,'a,'p,'d) NamedOp.t
     -> (Op.Val.t, 'b) interface
     -> (Op.Val.t, 'a * 'b) interface
-
-  val finally: (Op.Val.t, 'a, 'p, 'd) NamedOp.t -> (Op.Val.t, 'a) interface
+  (** Combinator for adding an operation to an interface *)
 
   val describe: (Op.Val.t,'a,'p,'d) NamedOp.t -> Op.t
 

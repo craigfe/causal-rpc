@@ -113,7 +113,6 @@ module Equal = struct
     | CaseVal1 (x, vs), CaseVal1 (y, vs') -> x.id1 = y.id1 (* TODO: check type of constructors? *)
     | _ -> false
 
-
   let rec t: type a. a t -> a equal = function
     | Unit   -> (=)
     | Bool   -> (=)
@@ -153,6 +152,15 @@ let mu: type a. (a t -> a t) -> a t = fun f ->
   let rec x = { recur = Recursive x } in
   let x' = f (Recursive x) in
   x.recur <- x'; x'
+
+let proj2_1: type a b. (a * b) t -> a t = function
+  | Pair (l,r) -> l
+  | _ -> invalid_arg "Cannot occur"
+
+let proj2_2: type a b. (a * b) t -> b t = function
+  | Pair (l,r) -> r
+  | _ -> invalid_arg "Cannot occur"
+
 
 type ('a, 'b) case_set = int -> ('a case * 'b)
 type ('a, 'b, 'c) open_variant = 'a case list -> string * 'c * 'a case list

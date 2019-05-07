@@ -17,6 +17,7 @@ module Config = struct
     name: string;
     poll_freq: float;
     two_phase: bool;
+    one_shot: bool;
   }
 
   let def opt d = match opt with
@@ -24,7 +25,7 @@ module Config = struct
     | None -> d
 
   let make ?log_source ?random_selection ?batch_size
-      ?thread_count ?name ?poll_freq ?two_phase () =
+      ?thread_count ?name ?poll_freq ?two_phase ?one_shot () =
     {
       log_source       = def log_source true;
       random_selection = def random_selection true;
@@ -32,7 +33,8 @@ module Config = struct
       thread_count     = def thread_count 1;
       name             = def name (random_name());
       poll_freq        = def poll_freq 5.0;
-      two_phase        = def two_phase true
+      two_phase        = def two_phase true;
+      one_shot         = def one_shot false
     }
 
   let log_source t       = t.log_source
@@ -42,6 +44,7 @@ module Config = struct
   let name t             = t.name
   let poll_freq t        = t.poll_freq
   let two_phase t        = t.two_phase
+  let one_shot t        = t.one_shot
 end
 
 module type W = sig
@@ -291,6 +294,7 @@ module Make
     >>= fun upstr ->
 
     let rec inner () =
+      let loop () = Store.B.yield () >>= inner in
 
       (* First check that the switch is on, if it exists *)
       (match switch with
@@ -315,17 +319,19 @@ module Make
               >>= fun () -> handle_request ~random_selection ~batch_size ~two_phase ?src s client br_name name
               >|= (fun () -> seen_before := SS.add br_name !seen_before)
               >>= fun () -> Logs_lwt.info ?src (fun m -> m "Finished handling request on branch %s" br_name)
+              >>= loop
 
           | Some (Job.Rpc _) ->
             Logs_lwt.info ?src (fun m -> m "RPC job found. Sleeping for %f seconds." poll_freq)
             >>= fun () -> Store.B.sleep poll_freq
+            >>= loop
 
-          | None ->
-            Logs_lwt.info ?src (fun m -> m "Job queue is empty. Sleeping for %f seconds." poll_freq)
-            >>= fun () -> Store.B.sleep poll_freq)
+          | None -> if C.one_shot conf
+            then Logs_lwt.info ?src (fun m -> m "Job queue is empty; this one-shot worker will now terminate.")
+            else (Logs_lwt.info ?src (fun m -> m "Job queue is empty. Sleeping for %f seconds." poll_freq)
+                  >>= fun () -> Store.B.sleep poll_freq
+                  >>= loop ))
 
-      >>= Store.B.yield
-      >>= inner
 
     in inner ()
 end

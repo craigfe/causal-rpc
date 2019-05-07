@@ -6,10 +6,16 @@ module Int: Irmin.Contents.S with type t = int64 = struct
   let merge = Irmin.Merge.(option (idempotent t))
 end
 
-
 module O = Operation.Make(Int)
 open O
 
+type intshape = ((O.Val.t -> O.Val.t) *
+              ((O.Val.t -> O.Val.t) *
+               ((float -> O.Val.t -> O.Val.t) *
+                ((int64 -> O.Val.t -> O.Val.t) *
+                 (int -> int list -> unit -> string -> O.Val.t -> O.Val.t)))))
+
+(* Define the operations to expose in the interface *)
 let identity_op  = declare "identity" return
 let increment_op = declare "increment" return
 let multiply_op  = declare "multiply" Type.(int64 @-> return)
@@ -17,43 +23,36 @@ let sleep_op     = declare "sleep" Type.(float @-> return)
 let complex_op   = declare "complex" Type.(int @-> list int @-> unit @-> string @-> return)
 
 module Definition = struct
+  type shape = intshape
+
   module Val = Int
   module D = Description.Make(Int)
   open D
 
-  type shape = ((O.Val.t -> O.Val.t) *
-                ((O.Val.t -> O.Val.t) *
-                 ((float -> O.Val.t -> O.Val.t) *
-                  ((int64 -> O.Val.t -> O.Val.t) *
-                   (int -> int list -> unit -> string -> O.Val.t -> O.Val.t)))))
-
-  let api = define (identity_op @ increment_op @ sleep_op @ multiply_op @ finally complex_op)
+  (* The interface description is a heterogeneous list of prototypes *)
+  let api = define (identity_op
+                    @ increment_op
+                    @ sleep_op
+                    @ multiply_op
+                    @ finally complex_op)
 end
 
 module Implementation: Interface.IMPL with type Val.t = int64 = struct
+  type shape = intshape
+
   module Val = Int
   module I = Interface.MakeImplementation(Val)
   open I
 
   let identity x = x
   let increment x = Int64.add Int64.one x
-  let sleep f x =
-    (* let time = f * (Random.float 0.1 + 0.95) in *)
-    (Unix.sleepf f; increment x)
-
+  let sleep f x = (Unix.sleepf f; increment x)
   let multiply = Int64.mul
 
   let product = List.fold_left (fun x y -> x * y) 1
-
   let complex i1 is () s = match Pervasives.int_of_string_opt s with
     | Some i -> Int64.mul @@ Int64.of_int (i1 * (product is) * i)
     | None -> Int64.mul Int64.minus_one
-
-  type shape = ((O.Val.t -> O.Val.t) *
-       ((O.Val.t -> O.Val.t) *
-        ((float -> O.Val.t -> O.Val.t) *
-         ((int64 -> O.Val.t -> O.Val.t) *
-          (int -> int list -> unit -> string -> O.Val.t -> O.Val.t)))))
 
   let api = define ((identity_op, identity)
          @ (increment_op, increment)

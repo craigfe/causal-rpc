@@ -31,17 +31,17 @@ let batch () =
   let () = print_endline "Starting batch execution" in
   let root = "/tmp/irmin/bench/concurrent_workers/" in
   let s = Lwt_switch.create () in
-  let values = Helpers.sequence_list 1 12 in
+  let values = Helpers.sequence_list 1 100 in
   let keys = List.map Helpers.key_from_int values in
 
   IntMap.empty ~directory:(root ^ "small_map") ()
   >>= IntMap.add_all (Helpers.zip keys (List.map Int64.of_int values))
-  >>= fun m -> Lwt.pick @@ (worker_pool s 7 "small_map") @ [
+  >>= fun m -> Lwt.pick @@ (worker_pool s 4 "small_map") @ [
       let rec inner n = match n with
         | 10 -> Lwt.return_unit
         | n ->
           Lwt.return @@ Core.Time_ns.now ()
-          >>= fun init -> IntMap.map ~timeout:100.0 (O.apply sleep_op 1.) m
+          >>= fun init -> IntMap.map ~timeout:10.0 (O.apply sleep_op 0.01) m
           >>= fun _result ->
 
           let final = Core.Time_ns.now () in
